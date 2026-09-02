@@ -6,9 +6,10 @@ the target environment and measured what they cost. Phase 1 made the creature al
 any external data: it walks, sits, sleeps and follows you between monitors, and you can pause,
 hide or quit it from a right-click menu, a global shortcut or the tray. Phase 2 brought the
 first real signal: your open ClickUp tasks with a due date, read through the official ClickUp
-MCP server, shown in a speech bubble when they are about to be due. Phase 3 adds judgement: a
+MCP server, shown in a speech bubble when they are about to be due. Phase 3 added judgement: a
 rules table decides what deserves a bubble, silence windows decide when, and a hard budget caps
-how often.
+how often. Phase 4 gives it a soul: a mood that follows your day, a celebration when tasks get
+done, and an optional voice from a language model, local first.
 
 ## Target
 
@@ -112,6 +113,42 @@ because the official server's names were not verified against a live connection.
 shape it validates was observed through ClickUp's connector. The full OAuth round trip against
 `mcp.clickup.com` has not been exercised yet; the first Connect on a real machine is the test.
 
+## Mood
+
+`src/main/brain/mood.ts` keeps a six-step ladder: dejected, stressed, uneasy, calm, cheerful,
+elated. Events from the last eight hours score it: a completed task counts up, a task
+completed late counts a little, a task going overdue counts down, every interruption shown
+counts down a little, and each quiet hour counts up. The mood moves one step at a time and
+stays at least twenty minutes on a step. Dejected climbs back on its own after two quiet hours.
+
+Mood changes the budget within the hard cap, never above it: uneasy and stressed shrink the
+hourly allowance, dejected drops to one interruption per hour and four per day. Sadness here is
+withdrawal, not volume. Mood also changes how the mascot looks and moves through modifiers,
+not separate sprite sheets: an expression layer over the eyes, animation speed and how long it
+rests. The tray icon mirrors the mood and returns to neutral when you hide the mascot on
+purpose.
+
+## Celebration
+
+When a sync shows a task that was open and is now closed, Wisp aggregates completions for
+thirty seconds and celebrates once: a hop for one task, a dance for two or three, a trophy for
+four or more. Only tasks assigned to you count, because the adapter only fetches those.
+
+## Voice
+
+Settings has a Voice section. Off by default: the bubble uses the fixed lines. A provider can
+rewrite each line in the creature's words, with a two second timeout and the fixed line as
+fallback, so a slow or absent model never delays a bubble by more than that.
+
+- Ollama on this machine. Detected at `localhost:11434`; the models it lists are offered.
+  Nothing leaves the machine. This is the preset offered first when it is found.
+- OpenAI-compatible server. Any chat completions endpoint, NVIDIA included. Base URL, model
+  and an optional API key.
+- Anthropic. Official SDK, default model `claude-opus-5` at low effort. API key required.
+
+Cloud providers receive task titles and the mood. The settings page says so next to the
+option. API keys are stored encrypted with safeStorage, never in config.json.
+
 ## Sprites
 
 `resources/sprites/wisp.png` and `wisp.json` follow the Aseprite JSON export (hash format,
@@ -181,10 +218,12 @@ dragged with the mouse. Run the harness again after changes that touch the loop.
 
 ```
 src/main/index.ts            entry, loop, IPC, harness wiring
-src/main/brain/              pure: movement, follow, actor reducer, silence windows, nudge rules
+src/main/brain/              pure: movement, follow, actor, silence, nudges, mood ladder, celebration
 src/main/stage/              the only place that calls setBounds, setShape, setAlwaysOnTop
 src/main/harness/            environment report, metrics, CSV, system sampler
-src/main/connectors.ts       ties MCP host, signal store, scheduler and nudge decisions together
+src/main/connectors.ts       ties MCP host, signal store, scheduler, nudges, mood and celebration
+src/main/voice.ts            speech provider selection, API key, status
+src/main/speech/             prompt, sanitizer, OpenAI-compatible and Anthropic adapters, Ollama detection
 src/main/silence.ts          system silence sources: Do Not Disturb, X11 fullscreen, snooze
 src/main/mcp/                MCP client host, OAuth PKCE loopback provider, encrypted secrets
 src/main/signals/            SQLite cache with diff, scheduler with backoff, ClickUp adapter

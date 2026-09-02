@@ -68,7 +68,7 @@ describe('fetchClickUpSignals', () => {
       due_date_from: '2026-08-26',
       due_date_to: '2026-09-05',
       order_by: 'due_date',
-      include_closed: false,
+      include_closed: true,
       page: 0,
     });
     expect(signals).toEqual([
@@ -125,7 +125,7 @@ describe('fetchClickUpSignals', () => {
     expect(tools.calls.filter((c) => c.name === 'f_filter_tasks')).toHaveLength(10);
   });
 
-  it('skips tasks without a due date or already closed', async () => {
+  it('skips tasks without a due date and keeps closed ones with closedAt', async () => {
     const tools = fakeTools(['f_filter_tasks', 'r_resolve_assignees'], (n) =>
       n === 'r_resolve_assignees'
         ? { userIds: ['1'] }
@@ -141,7 +141,9 @@ describe('fetchClickUpSignals', () => {
           ),
     );
     const signals = await fetchClickUpSignals(tools, { nowMs: now, horizonDays: 1 });
-    expect(signals.map((s) => s.id)).toEqual(['clickup:d']);
+    expect(signals.map((s) => s.id)).toEqual(['clickup:b', 'clickup:d']);
+    expect(signals[0]?.closedAt).toBe(1700000000000);
+    expect(signals[1]?.closedAt).toBeUndefined();
   });
 
   it('unwraps MCP text content carrying JSON', async () => {

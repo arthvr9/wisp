@@ -1,6 +1,8 @@
 import type { PoseUpdate } from './actor';
 import type { Config } from './config';
+import type { Mood } from './mood';
 import type { Signal, SignalsStatus } from './signals';
+import type { SpeechStatus } from './speech';
 
 export const IPC = {
   dragStart: 'wisp:drag-start',
@@ -18,6 +20,12 @@ export const IPC = {
   signalsStatusGet: 'wisp:signals-status-get',
   signalsStatusChanged: 'wisp:signals-status-changed',
   signalsList: 'wisp:signals-list',
+  speechStatusGet: 'wisp:speech-status-get',
+  speechStatusChanged: 'wisp:speech-status-changed',
+  speechSetApiKey: 'wisp:speech-set-api-key',
+  speechTest: 'wisp:speech-test',
+  moodGet: 'wisp:mood-get',
+  moodChanged: 'wisp:mood-changed',
 } as const;
 
 export interface DragStart {
@@ -53,4 +61,10 @@ export interface WispApi {
   getSignalsStatus(): Promise<SignalsStatus>;
   onSignalsStatusChanged(listener: (status: SignalsStatus) => void): () => void;
   listSignals(): Promise<Signal[]>;
+  getSpeechStatus(): Promise<SpeechStatus>;
+  onSpeechStatusChanged(listener: (status: SpeechStatus) => void): () => void;
+  setSpeechApiKey(key: string): Promise<SpeechStatus>;
+  testSpeech(): Promise<{ text: string; source: 'model' | 'fallback'; latencyMs: number }>;
+  getMood(): Promise<Mood>;
+  onMoodChanged(listener: (mood: Mood) => void): () => void;
 }

@@ -8,6 +8,7 @@ export interface Diff {
   added: Signal[];
   changed: Signal[];
   gone: Signal[];
+  completed: Signal[];
 }
 
 interface Row {
@@ -20,6 +21,7 @@ interface Row {
   status: string;
   listName: string;
   gone: boolean;
+  closedAt: number | undefined;
 }
 
 const schema = `
@@ -34,7 +36,8 @@ CREATE TABLE IF NOT EXISTS signals (
   list_name TEXT NOT NULL,
   first_seen INTEGER NOT NULL,
   last_seen INTEGER NOT NULL,
-  gone_at INTEGER NULL
+  gone_at INTEGER NULL,
+  closed_at INTEGER NULL
 );
 CREATE TABLE IF NOT EXISTS nudges (
   signal_id TEXT NOT NULL,
@@ -69,6 +72,7 @@ function toRow(r: Record<string, SQLOutputValue>): Row {
     status: text(r.status),
     listName: text(r.list_name),
     gone: r.gone_at !== null && r.gone_at !== undefined,
+    closedAt: r.closed_at === null || r.closed_at === undefined ? undefined : int(r.closed_at),
   };
 }
 
@@ -82,11 +86,22 @@ function toSignal(r: Row): Signal {
     url: r.url,
     status: r.status,
     listName: r.listName,
+    ...(r.closedAt === undefined ? {} : { closedAt: r.closedAt }),
   };
 }
 
 function differs(a: Row, b: Signal): boolean {
   return a.title !== b.title || a.dueAt !== b.dueAt || a.status !== b.status;
+}
+
+// Phase 2 databases predate closed_at. SQLite has no ADD COLUMN IF NOT EXISTS.
+function migrate(db: DatabaseSync): void {
+  const columns = db
+    .prepare('PRAGMA table_info(signals)')
+    .all()
+    .map((r) => text(r.name));
+  if (!columns.includes('closed_at'))
+    db.exec('ALTER TABLE signals ADD COLUMN closed_at INTEGER NULL');
 }
 
 export class SignalStore {
@@ -95,6 +110,7 @@ export class SignalStore {
   constructor(path: string) {
     this.db = new DatabaseSync(path);
     this.db.exec(schema);
+    migrate(this.db);
   }
 
   replaceAll(source: SignalSource, signals: Signal[], nowMs: number): Diff {
@@ -106,8 +122,8 @@ export class SignalStore {
 
     const upsert = this.db.prepare(
       `INSERT INTO signals
-         (id, source, kind, title, due_at, url, status, list_name, first_seen, last_seen, gone_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+         (id, source, kind, title, due_at, url, status, list_name, first_seen, last_seen, gone_at, closed_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
        ON CONFLICT(id) DO UPDATE SET
          kind = excluded.kind,
          title = excluded.title,
@@ -116,13 +132,14 @@ export class SignalStore {
          status = excluded.status,
          list_name = excluded.list_name,
          last_seen = excluded.last_seen,
-         gone_at = NULL`,
+         gone_at = NULL,
+         closed_at = excluded.closed_at`,
     );
     const markGone = this.db.prepare(
       'UPDATE signals SET gone_at = ? WHERE id = ? AND gone_at IS NULL',
     );
 
-    const diff: Diff = { added: [], changed: [], gone: [] };
+    const diff: Diff = { added: [], changed: [], gone: [], completed: [] };
     const seen = new Set<string>();
 
     this.db.exec('BEGIN');
@@ -142,9 +159,17 @@ export class SignalStore {
           s.listName,
           nowMs,
           nowMs,
+          s.closedAt ?? null,
         );
-        if (before === undefined || before.gone) diff.added.push(s);
-        else if (differs(before, s)) diff.changed.push(s);
+        const open = s.closedAt === undefined;
+        const wasOpen = before !== undefined && !before.gone && before.closedAt === undefined;
+        if (!open) {
+          if (wasOpen) diff.completed.push(s);
+        } else if (before === undefined || before.gone || before.closedAt !== undefined) {
+          diff.added.push(s);
+        } else if (differs(before, s)) {
+          diff.changed.push(s);
+        }
       }
       for (const row of existing.values()) {
         if (seen.has(row.id) || row.gone) continue;
@@ -162,10 +187,14 @@ export class SignalStore {
   list(source?: SignalSource): Signal[] {
     const rows =
       source === undefined
-        ? this.db.prepare('SELECT * FROM signals WHERE gone_at IS NULL ORDER BY due_at, id').all()
+        ? this.db
+            .prepare(
+              'SELECT * FROM signals WHERE gone_at IS NULL AND closed_at IS NULL ORDER BY due_at, id',
+            )
+            .all()
         : this.db
             .prepare(
-              'SELECT * FROM signals WHERE gone_at IS NULL AND source = ? ORDER BY due_at, id',
+              'SELECT * FROM signals WHERE gone_at IS NULL AND closed_at IS NULL AND source = ? ORDER BY due_at, id',
             )
             .all(source);
     return rows.map((r) => toSignal(toRow(r)));
