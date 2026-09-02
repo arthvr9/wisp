@@ -5,12 +5,14 @@ import { join } from 'node:path';
 
 import { autostartPath, setAutostart } from './autostart';
 import { createActor, reduce } from './brain/actor';
+import { activeSilence, quietHoursWindows } from './brain/silence';
 import type { ActorState } from './brain/actor';
 import { groundY } from './brain/movement';
 import type { DisplayArea, Target } from './brain/movement';
 import { ConfigStore } from './config';
 import { Connectors } from './connectors';
-import type { Announcement } from './brain/signals';
+import { SilenceSources } from './silence';
+import type { Nudge } from '../shared/nudges';
 import { describeEnvironment, formatEnvironment } from './harness/environment';
 import { Harness, formatSummary } from './harness/metrics';
 import { menuTemplate } from './menu';
@@ -69,24 +71,33 @@ void app.whenReady().then(async () => {
   const stage = createStage(Math.round(actor.x), Math.round(actor.y));
   const bubble = createBubble();
 
+  const silence = new SilenceSources();
+  silence.start();
+
   let bubbleUntil = 0;
-  const queue: Announcement[] = [];
-  const announce = (list: Announcement[]) => {
-    for (const a of list) {
-      if (!queue.some((q) => q.signal.id === a.signal.id && q.kind === a.kind)) queue.push(a);
+  const queue: Nudge[] = [];
+  const enqueue = (list: Nudge[]) => {
+    for (const n of list) {
+      if (!queue.some((q) => q.signalId === n.signalId && q.kind === n.kind)) queue.push(n);
+    }
+  };
+  const phrase = (n: Nudge): string => {
+    switch (n.kind) {
+      case 'due-soon':
+        return t('phrase.dueSoon', { minutes: n.minutesLeft, title: n.title });
+      case 'due-now':
+        return t('phrase.dueNow', { title: n.title });
+      case 'overdue':
+        return t(n.repeat > 0 ? 'phrase.overdueAgain' : 'phrase.overdue', { title: n.title });
+      case 'due-today':
+        return t('phrase.dueToday', { title: n.title });
     }
   };
   const showNext = (nowMs: number) => {
     const next = queue.shift();
     if (!next) return;
-    connectors.markAnnounced(next, nowMs);
-    const text =
-      next.kind === 'due-soon'
-        ? t('phrase.dueSoon', { minutes: next.minutesLeft, title: next.signal.title })
-        : next.kind === 'due-now'
-          ? t('phrase.dueNow', { title: next.signal.title })
-          : t('phrase.overdue', { title: next.signal.title });
-    bubble.show({ text, url: next.signal.url });
+    connectors.recordShown(next, nowMs);
+    bubble.show({ text: phrase(next), url: next.url });
     bubbleUntil = nowMs + BUBBLE_MS;
     actor = reduce(actor, { type: 'alert', ms: BUBBLE_MS }, target);
   };
@@ -94,11 +105,26 @@ void app.whenReady().then(async () => {
   const connectors = new Connectors({
     pollMinutes: () => config.get().pollMinutes,
     dueSoonMinutes: () => config.get().dueSoonMinutes,
+    budget: () => config.get().budget,
+    silence: (nowMs) => [
+      ...quietHoursWindows(config.get().quietHours, nowMs),
+      ...silence.windows(nowMs),
+    ],
+    silenceStatus: (nowMs) => {
+      const windows = [
+        ...quietHoursWindows(config.get().quietHours, nowMs),
+        ...silence.windows(nowMs),
+      ];
+      return {
+        snoozedUntil: silence.snoozedUntil(nowMs),
+        activeSource: activeSilence(windows, nowMs, 'normal')?.source,
+      };
+    },
     onStatus: (status) => {
       for (const w of BrowserWindow.getAllWindows())
         w.webContents.send(IPC.signalsStatusChanged, status);
     },
-    onAnnouncements: announce,
+    onNudges: enqueue,
   });
   ipcMain.handle(IPC.clickupConnect, () => connectors.connect());
   ipcMain.handle(IPC.clickupDisconnect, () => connectors.disconnect());
@@ -106,6 +132,7 @@ void app.whenReady().then(async () => {
   ipcMain.handle(IPC.signalsStatusGet, () => connectors.status());
   ipcMain.handle(IPC.signalsList, () => connectors.signals());
   app.on('before-quit', () => {
+    silence.stop();
     connectors.close();
   });
 
@@ -135,6 +162,13 @@ void app.whenReady().then(async () => {
     poke() {
       actor = reduce(actor, { type: 'alert' }, target);
     },
+    toggleSnooze() {
+      const now = Date.now();
+      if (silence.snoozedUntil(now) !== undefined) silence.unsnooze();
+      else silence.snooze(now + 60 * 60 * 1000);
+      refreshMenus();
+      connectors.publishStatus();
+    },
     openSettings() {
       openSettings(appPath);
     },
@@ -143,8 +177,16 @@ void app.whenReady().then(async () => {
     },
   };
 
+  function menuState() {
+    return {
+      paused: actor.paused,
+      hidden,
+      snoozed: silence.snoozedUntil(Date.now()) !== undefined,
+    };
+  }
+
   function refreshMenus(): void {
-    tray?.update(t('tray.tooltip'), menuTemplate(t, { paused: actor.paused, hidden }, actions));
+    tray?.update(t('tray.tooltip'), menuTemplate(t, menuState(), actions));
   }
 
   const shortcutRegistered = registerShortcut({
@@ -207,7 +249,7 @@ void app.whenReady().then(async () => {
   let menuShown = false;
   let openMenu: Menu | undefined;
   ipcMain.on(IPC.contextMenu, () => {
-    openMenu = Menu.buildFromTemplate(menuTemplate(t, { paused: actor.paused, hidden }, actions));
+    openMenu = Menu.buildFromTemplate(menuTemplate(t, menuState(), actions));
     openMenu.on('menu-will-show', () => {
       menuShown = true;
     });
@@ -337,7 +379,7 @@ void app.whenReady().then(async () => {
       const nowMs = Date.now();
       if (nowMs >= nextDueCheck) {
         nextDueCheck = nowMs + 30_000;
-        announce(connectors.announcements(nowMs));
+        enqueue(connectors.decide(nowMs).nudges);
       }
       if (bubble.isVisible()) {
         if (nowMs >= bubbleUntil || hidden) bubble.hide();

@@ -18,8 +18,19 @@ describe('normalizeConfig', () => {
       followCursor: false,
       dueSoonMinutes: 30,
       pollMinutes: 5,
+      quietHours: { enabled: true, start: '19:00', end: '08:00' },
+      budget: { maxPerHour: 3, maxPerDay: 12 },
     });
     expect(normalizeConfig({ name: 'x'.repeat(40) }).name).toHaveLength(24);
+  });
+
+  it('validates quiet hours and budget field by field', () => {
+    const c = normalizeConfig({
+      quietHours: { enabled: false, start: '25:00', end: '07:30' },
+      budget: { maxPerHour: 0, maxPerDay: 40 },
+    });
+    expect(c.quietHours).toEqual({ enabled: false, start: '19:00', end: '07:30' });
+    expect(c.budget).toEqual({ maxPerHour: 3, maxPerDay: 40 });
   });
 
   it('rejects an empty name', () => {

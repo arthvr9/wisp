@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import type { SQLOutputValue } from 'node:sqlite';
 
+import type { NudgeKind, NudgeRecord } from '../../shared/nudges';
 import type { Signal, SignalKind, SignalSource } from '../../shared/signals';
 
 export interface Diff {
@@ -35,12 +36,12 @@ CREATE TABLE IF NOT EXISTS signals (
   last_seen INTEGER NOT NULL,
   gone_at INTEGER NULL
 );
-CREATE TABLE IF NOT EXISTS announcements (
+CREATE TABLE IF NOT EXISTS nudges (
   signal_id TEXT NOT NULL,
   kind TEXT NOT NULL,
-  at INTEGER NOT NULL,
-  PRIMARY KEY (signal_id, kind)
+  at INTEGER NOT NULL
 );
+CREATE INDEX IF NOT EXISTS nudges_at ON nudges (at);
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -170,20 +171,29 @@ export class SignalStore {
     return rows.map((r) => toSignal(toRow(r)));
   }
 
-  wasAnnounced(signalId: string, kind: string): boolean {
-    const row = this.db
-      .prepare('SELECT 1 AS hit FROM announcements WHERE signal_id = ? AND kind = ?')
-      .get(signalId, kind);
-    return row !== undefined;
+  recordNudge(record: NudgeRecord): void {
+    this.db
+      .prepare('INSERT INTO nudges (signal_id, kind, at) VALUES (?, ?, ?)')
+      .run(record.signalId, record.kind, record.at);
   }
 
-  markAnnounced(signalId: string, kind: string, nowMs: number): void {
-    this.db
+  // Everything shown in the last day plus the latest record per signal and kind, which is
+  // what the escalation rules need to space repeats correctly.
+  nudgeHistory(nowMs: number, windowMs = 24 * 60 * 60 * 1000): NudgeRecord[] {
+    const rows = this.db
       .prepare(
-        `INSERT INTO announcements (signal_id, kind, at) VALUES (?, ?, ?)
-         ON CONFLICT(signal_id, kind) DO UPDATE SET at = excluded.at`,
+        `SELECT signal_id, kind, at FROM nudges
+         WHERE at > ?
+         UNION
+         SELECT signal_id, kind, MAX(at) AS at FROM nudges GROUP BY signal_id, kind
+         ORDER BY at`,
       )
-      .run(signalId, kind, nowMs);
+      .all(nowMs - windowMs);
+    return rows.map((r) => ({
+      signalId: text(r.signal_id),
+      kind: text(r.kind) as NudgeKind,
+      at: Number(r.at),
+    }));
   }
 
   getMeta(key: string): string | undefined {

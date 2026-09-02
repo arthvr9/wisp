@@ -90,14 +90,19 @@ describe('SignalStore', () => {
     expect(store.list()).toEqual([a]);
   });
 
-  it('tracks announcements per signal and kind', () => {
-    expect(store.wasAnnounced('clickup:a', 'due-soon')).toBe(false);
-    store.markAnnounced('clickup:a', 'due-soon', 10);
-    expect(store.wasAnnounced('clickup:a', 'due-soon')).toBe(true);
-    expect(store.wasAnnounced('clickup:a', 'overdue')).toBe(false);
-    expect(store.wasAnnounced('clickup:b', 'due-soon')).toBe(false);
-    store.markAnnounced('clickup:a', 'due-soon', 20);
-    expect(store.wasAnnounced('clickup:a', 'due-soon')).toBe(true);
+  it('keeps nudge history for a day plus the latest record per signal and kind', () => {
+    const hour = 60 * 60 * 1000;
+    const now = 100 * hour;
+    store.recordNudge({ signalId: 'clickup:a', kind: 'overdue', at: now - 50 * hour });
+    store.recordNudge({ signalId: 'clickup:a', kind: 'overdue', at: now - 30 * hour });
+    store.recordNudge({ signalId: 'clickup:b', kind: 'due-soon', at: now - 2 * hour });
+    store.recordNudge({ signalId: 'clickup:b', kind: 'due-soon', at: now - hour });
+    const history = store.nudgeHistory(now);
+    expect(history).toEqual([
+      { signalId: 'clickup:a', kind: 'overdue', at: now - 30 * hour },
+      { signalId: 'clickup:b', kind: 'due-soon', at: now - 2 * hour },
+      { signalId: 'clickup:b', kind: 'due-soon', at: now - hour },
+    ]);
   });
 
   it('stores meta values', () => {
@@ -117,13 +122,13 @@ describe('SignalStore on disk', () => {
       const first = new SignalStore(path);
       first.setMeta('k', 'v');
       first.replaceAll('clickup', [sig('a', 1000)], 10);
-      first.markAnnounced('clickup:a', 'due-soon', 10);
+      first.recordNudge({ signalId: 'clickup:a', kind: 'due-soon', at: 10 });
       first.close();
 
       const second = new SignalStore(path);
       expect(second.getMeta('k')).toBe('v');
       expect(second.list().map((s) => s.id)).toEqual(['clickup:a']);
-      expect(second.wasAnnounced('clickup:a', 'due-soon')).toBe(true);
+      expect(second.nudgeHistory(20)).toHaveLength(1);
       second.close();
     } finally {
       rmSync(dir, { recursive: true, force: true });

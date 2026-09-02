@@ -305,6 +305,13 @@ input[type='number'] {
   width: 80px;
 }
 
+.field:nth-child(7) {
+  animation-delay: 180ms;
+}
+.field:nth-child(8) {
+  animation-delay: 210ms;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .page,
   .field,
@@ -320,4 +327,36 @@ input[type='number'] {
 label.inline {
   display: block;
   margin-top: 6px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: auto 1fr auto 1fr;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 6px;
+}
+
+.row label.inline {
+  margin: 0;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.row input {
+  width: 100%;
+}
+
+input[type='time'] {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: #fff;
+  color: var(--fg);
+  font: inherit;
+}
+
+input[type='time']:disabled {
+  color: var(--muted);
+  background: var(--code-bg);
 }

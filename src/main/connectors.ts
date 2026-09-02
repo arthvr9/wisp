@@ -1,11 +1,12 @@
 import { app, safeStorage, shell } from 'electron';
 import { join } from 'node:path';
 
-import { dueAnnouncements } from './brain/signals';
-import type { Announcement } from './brain/signals';
+import { decideNudges } from './brain/nudge';
+import type { NudgeDecision } from './brain/nudge';
 import { LoopbackOAuthProvider, McpHost, NeedsAuthorizationError, SecretStore } from './mcp';
 import { fetchClickUpSignals, Scheduler, SignalStore } from './signals';
-import type { Signal, SignalsStatus, ConnectionState } from '../shared/signals';
+import type { Nudge, NudgeBudget, SilenceWindow } from '../shared/nudges';
+import type { ConnectionState, Signal, SignalsStatus, SilenceStatus } from '../shared/signals';
 
 const CLICKUP_URL = 'https://mcp.clickup.com/mcp';
 const HORIZON_DAYS = 14;
@@ -13,8 +14,11 @@ const HORIZON_DAYS = 14;
 export interface ConnectorOptions {
   pollMinutes: () => number;
   dueSoonMinutes: () => number;
+  budget: () => NudgeBudget;
+  silence: (nowMs: number) => SilenceWindow[];
+  silenceStatus: (nowMs: number) => SilenceStatus;
   onStatus: (status: SignalsStatus) => void;
-  onAnnouncements: (announcements: Announcement[]) => void;
+  onNudges: (nudges: Nudge[]) => void;
 }
 
 export class Connectors {
@@ -59,7 +63,11 @@ export class Connectors {
   }
 
   status(): SignalsStatus {
-    return { clickup: this.clickup, nextSyncAt: this.scheduler.nextAt() };
+    return {
+      clickup: this.clickup,
+      nextSyncAt: this.scheduler.nextAt(),
+      silence: this.opts.silenceStatus(Date.now()),
+    };
   }
 
   signals(): Signal[] {
@@ -97,17 +105,21 @@ export class Connectors {
     return this.status();
   }
 
-  // Runs every tick from main: cheap, reads the cache only.
-  announcements(nowMs: number): Announcement[] {
-    if (this.clickup.state !== 'connected') return [];
-    return dueAnnouncements(this.store.list('clickup'), nowMs, {
+  // Called from main every half minute: cache and history only, no network.
+  decide(nowMs: number): NudgeDecision {
+    if (this.clickup.state !== 'connected') return { nudges: [], silenced: [], overBudget: [] };
+    return decideNudges({
+      signals: this.store.list('clickup'),
+      nowMs,
+      history: this.store.nudgeHistory(nowMs),
+      silence: this.opts.silence(nowMs),
+      budget: this.opts.budget(),
       dueSoonMs: this.opts.dueSoonMinutes() * 60_000,
-      announced: (id, kind) => this.store.wasAnnounced(id, kind),
     });
   }
 
-  markAnnounced(a: Announcement, nowMs: number): void {
-    this.store.markAnnounced(a.signal.id, a.kind, nowMs);
+  recordShown(nudge: Nudge, nowMs: number): void {
+    this.store.recordNudge({ signalId: nudge.signalId, kind: nudge.kind, at: nowMs });
   }
 
   close(): void {
@@ -128,7 +140,7 @@ export class Connectors {
       this.lastSyncAt = now;
       this.clickup = { state: 'connected', lastSyncAt: now, signalCount: signals.length };
       this.publish();
-      this.opts.onAnnouncements(this.announcements(now));
+      this.opts.onNudges(this.decide(now).nudges);
     } catch (err) {
       if (err instanceof NeedsAuthorizationError) {
         this.clickup = { state: 'error', message: 'authorization expired, connect again' };
@@ -140,8 +152,12 @@ export class Connectors {
     }
   }
 
-  private publish(): void {
+  publishStatus(): void {
     this.opts.onStatus(this.status());
+  }
+
+  private publish(): void {
+    this.publishStatus();
   }
 }
 

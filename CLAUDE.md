@@ -70,6 +70,13 @@ transparent, non-focusable X11 window (through XWayland) that moves itself with 
   shows what the brain decided and records that it was shown.
 - Secrets go through `SecretStore` (safeStorage). Never write a token to config.json or a log.
 
+## Phase 3 shape
+
+- `src/main/brain/nudge.ts` owns every decision about interrupting the user. Main never
+  decides on its own whether to show something; it asks `decideNudges` and records what it
+  showed. New sources of silence produce `SilenceWindow[]`, nothing else.
+- The budget is a hard cap. Do not add a path around it, not even for urgent items.
+
 ## Phase 0 findings worth remembering
 
 - `focusable: false` makes Chromium create an override-redirect X window. Mutter does not
