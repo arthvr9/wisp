@@ -11,7 +11,14 @@ describe('normalizeConfig', () => {
 
   it('keeps valid fields, trims and caps the name', () => {
     const c = normalizeConfig({ name: '  Momo  ', autostart: true, followCursor: false });
-    expect(c).toEqual({ name: 'Momo', locale: 'en', autostart: true, followCursor: false });
+    expect(c).toEqual({
+      name: 'Momo',
+      locale: 'en',
+      autostart: true,
+      followCursor: false,
+      dueSoonMinutes: 30,
+      pollMinutes: 5,
+    });
     expect(normalizeConfig({ name: 'x'.repeat(40) }).name).toHaveLength(24);
   });
 

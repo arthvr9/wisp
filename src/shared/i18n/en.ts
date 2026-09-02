@@ -22,11 +22,28 @@ export const en = {
   'settings.tray.unavailable':
     'No system tray found. On GNOME, install the AppIndicator extension or use the right-click menu.',
   'settings.saved': 'Saved.',
+  'settings.clickup': 'ClickUp',
+  'settings.clickup.hint':
+    'Reads your open tasks with a due date through the official ClickUp MCP server. Nothing is written.',
+  'settings.clickup.connect': 'Connect',
+  'settings.clickup.disconnect': 'Disconnect',
+  'settings.clickup.syncNow': 'Sync now',
+  'settings.clickup.disconnected': 'Not connected.',
+  'settings.clickup.authorizing': 'Waiting for the browser. Authorize Wisp there and come back.',
+  'settings.clickup.connected': 'Connected. {count} tasks with a due date.',
+  'settings.clickup.lastSync': 'Last sync {time}.',
+  'settings.clickup.nextSync': 'Next sync {time}.',
+  'settings.clickup.error': 'Sync failed: {message}',
+  'settings.clickup.dueSoon': 'Warn {minutes} minutes before a due date.',
   'phrase.hello': '{name} is here.',
   'phrase.dropped': 'That was a long way down.',
   'phrase.picked': 'Put {name} down, please.',
   'phrase.crossed': 'Other monitor. Got it.',
   'phrase.sleepy': 'Nothing is happening. {name} will nap.',
+  'phrase.dueSoon': 'Due in {minutes} min: {title}',
+  'phrase.dueNow': 'Due now: {title}',
+  'phrase.overdue': 'Overdue: {title}',
+  'phrase.connected': '{name} can see your tasks now.',
 } as const;
 
 export type MessageKey = keyof typeof en;
