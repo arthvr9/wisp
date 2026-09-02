@@ -13,7 +13,7 @@ import { ConfigStore } from './config';
 import { Connectors } from './connectors';
 import { SecretStore } from './mcp';
 import { SilenceSources } from './silence';
-import { Voice } from './voice';
+import { createVoice } from './voice';
 import type { Celebration, Mood } from '../shared/mood';
 import type { SpeechEvent, SpeechRequest } from '../shared/speech';
 import type { Nudge } from '../shared/nudges';
@@ -64,14 +64,13 @@ void app.whenReady().then(async () => {
   const broadcast = (channel: string, payload: unknown) => {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(channel, payload);
   };
-  const voice = new Voice(
+  const voice = createVoice(
     new SecretStore(safeStorage, join(app.getPath('userData'), 'secrets')),
     config.get().speech,
     (status) => {
       broadcast(IPC.speechStatusChanged, status);
     },
   );
-  void voice.start();
   const minutes = harnessMinutes();
   const harness =
     minutes === undefined ? undefined : new Harness(TICK_MS, join(appPath, 'harness-results'));

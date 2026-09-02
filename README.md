@@ -149,6 +149,13 @@ fallback, so a slow or absent model never delays a bubble by more than that.
 Cloud providers receive task titles and the mood. The settings page says so next to the
 option. API keys are stored encrypted with safeStorage, never in config.json.
 
+The voice is an optional module behind one interface, `src/main/voice/index.ts`. With the
+provider off, nothing under `src/main/speech/` or the Anthropic SDK is loaded; the module is
+pulled in on demand when settings opens or a provider is chosen. To drop the feature entirely:
+delete `src/main/speech/` and `src/main/voice/model.ts`, return `silentVoice()` from
+`createVoice`, remove the Voice section from the settings page and `@anthropic-ai/sdk` from
+package.json.
+
 ## Sprites
 
 `resources/sprites/wisp.png` and `wisp.json` follow the Aseprite JSON export (hash format,
