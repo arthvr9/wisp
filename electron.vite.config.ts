@@ -1,3 +1,5 @@
+import { resolve } from 'node:path';
+
 import react from '@vitejs/plugin-react';
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 
@@ -10,5 +12,15 @@ export default defineConfig({
   },
   renderer: {
     plugins: [react()],
+    build: {
+      // Keep the sprite sheet as a real file; a data: URI would be blocked by the page CSP.
+      assetsInlineLimit: 0,
+      rollupOptions: {
+        input: {
+          index: resolve(__dirname, 'src/renderer/index.html'),
+          settings: resolve(__dirname, 'src/renderer/settings.html'),
+        },
+      },
+    },
   },
 });

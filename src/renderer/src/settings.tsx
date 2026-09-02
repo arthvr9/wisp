@@ -1,14 +1,14 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
-import { Mascot } from './Mascot';
-import './mascot.css';
+import { SettingsPage } from './SettingsPage';
+import './settings.css';
 
 const root = document.getElementById('root');
 if (root) {
   createRoot(root).render(
     <StrictMode>
-      <Mascot />
+      <SettingsPage />
     </StrictMode>,
   );
 }

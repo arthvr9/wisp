@@ -1,0 +1,32 @@
+export const en = {
+  'menu.pause': 'Pause',
+  'menu.resume': 'Resume',
+  'menu.hide': 'Hide',
+  'menu.show': 'Show',
+  'menu.settings': 'Settings',
+  'menu.quit': 'Quit',
+  'menu.poke': 'Poke {name}',
+  'tray.tooltip': '{name}',
+  'settings.title': 'Settings',
+  'settings.name': 'Name',
+  'settings.name.hint': 'How {name} is called in its own lines.',
+  'settings.language': 'Language',
+  'settings.language.en': 'English',
+  'settings.autostart': 'Start with the session',
+  'settings.autostart.hint': 'Writes a .desktop file to {path}.',
+  'settings.followCursor': 'Follow the cursor between monitors',
+  'settings.followCursor.hint': 'Waits three seconds before crossing over.',
+  'settings.shortcut': 'Global shortcut',
+  'settings.shortcut.hint': 'Pauses and resumes. Toggle it twice to hide.',
+  'settings.shortcut.unavailable': 'Could not register the shortcut in this session.',
+  'settings.tray.unavailable':
+    'No system tray found. On GNOME, install the AppIndicator extension or use the right-click menu.',
+  'settings.saved': 'Saved.',
+  'phrase.hello': '{name} is here.',
+  'phrase.dropped': 'That was a long way down.',
+  'phrase.picked': 'Put {name} down, please.',
+  'phrase.crossed': 'Other monitor. Got it.',
+  'phrase.sleepy': 'Nothing is happening. {name} will nap.',
+} as const;
+
+export type MessageKey = keyof typeof en;

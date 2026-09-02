@@ -1,14 +1,26 @@
-import { app, ipcMain, screen } from 'electron';
-import type { Display } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, powerMonitor, screen } from 'electron';
+import type { Display, Point } from 'electron';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { step } from './brain/movement';
-import type { DisplayArea, MovementState, Target } from './brain/movement';
+import { autostartPath, setAutostart } from './autostart';
+import { createActor, reduce } from './brain/actor';
+import type { ActorState } from './brain/actor';
+import { groundY } from './brain/movement';
+import type { DisplayArea, Target } from './brain/movement';
+import { ConfigStore } from './config';
 import { describeEnvironment, formatEnvironment } from './harness/environment';
 import { Harness, formatSummary } from './harness/metrics';
+import { menuTemplate } from './menu';
+import { registerShortcut, SHORTCUT } from './shortcut';
+import { openSettings } from './stage/settings';
 import { createStage, MASCOT_SIZE } from './stage/window';
+import { createTray, detectTray } from './tray';
+import type { TrayHandle } from './tray';
+import type { Config } from '../shared/config';
+import { translator } from '../shared/i18n';
 import { IPC } from '../shared/ipc';
-import type { DragStart } from '../shared/ipc';
+import type { DragStart, EnvironmentInfo } from '../shared/ipc';
 
 // Native Wayland clients cannot position their own windows or stay above others, which is
 // the whole point of this app. Forcing the X11 backend routes us through XWayland, where
@@ -24,7 +36,6 @@ if (!process.argv.includes(OZONE_FLAG)) {
 
 const TICK_MS = 33;
 const SAMPLE_MS = 5000;
-const SPEED_PX_S = 120;
 
 function toArea(d: Display): DisplayArea {
   return { id: d.id, ...d.workArea };
@@ -37,147 +48,265 @@ function harnessMinutes(): number | undefined {
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
-function logCursor(): void {
-  const point = screen.getCursorScreenPoint();
-  const display = screen.getDisplayNearestPoint(point);
-  console.log(`cursor            ${point.x},${point.y} on display #${display.id}`);
-}
-
-void app.whenReady().then(() => {
-  const harness = new Harness(TICK_MS, join(app.getAppPath(), 'harness-results'));
+void app.whenReady().then(async () => {
+  const appPath = app.getAppPath();
+  const config = new ConfigStore(join(app.getPath('userData'), 'config.json'));
   const minutes = harnessMinutes();
+  const harness =
+    minutes === undefined ? undefined : new Harness(TICK_MS, join(appPath, 'harness-results'));
 
   let target: Target = {
     displays: screen.getAllDisplays().map(toArea),
     width: MASCOT_SIZE,
     height: MASCOT_SIZE,
   };
+  const home = toArea(screen.getPrimaryDisplay());
+  let actor: ActorState = createActor(home.id, home.x + 40, groundY(home, MASCOT_SIZE));
+  const stage = createStage(Math.round(actor.x), Math.round(actor.y));
+
   const refreshDisplays = () => {
     target = { ...target, displays: screen.getAllDisplays().map(toArea) };
+    actor = reduce(actor, { type: 'displays-changed' }, target);
   };
   screen.on('display-added', refreshDisplays);
   screen.on('display-removed', refreshDisplays);
   screen.on('display-metrics-changed', refreshDisplays);
 
-  const home = screen.getPrimaryDisplay();
-  let state: MovementState = {
-    x: home.workArea.x + 40,
-    y: home.workArea.y + home.workArea.height - MASCOT_SIZE - 40,
-    vx: SPEED_PX_S,
-    displayId: home.id,
+  let hidden = false;
+  let tray: TrayHandle | undefined;
+  let t = translator(config.get().locale, { name: config.get().name });
+
+  const actions = {
+    togglePause() {
+      actor = reduce(actor, { type: actor.paused ? 'resume' : 'pause' }, target);
+      refreshMenus();
+    },
+    toggleHidden() {
+      hidden = !hidden;
+      if (hidden) stage.win.hide();
+      else stage.win.showInactive();
+      refreshMenus();
+    },
+    poke() {
+      actor = reduce(actor, { type: 'alert' }, target);
+    },
+    openSettings() {
+      openSettings(appPath);
+    },
+    quit() {
+      app.quit();
+    },
   };
 
-  const stage = createStage(Math.round(state.x), Math.round(state.y));
+  function refreshMenus(): void {
+    tray?.update(t('tray.tooltip'), menuTemplate(t, { paused: actor.paused, hidden }, actions));
+  }
 
-  stage.win.webContents.once('did-finish-load', () => {
-    console.log(formatEnvironment(describeEnvironment(stage.win)));
-    console.log(`setShape          ${stage.cutCorners()}`);
-    logCursor();
-    console.log(`results           ${harness.resultsDir}`);
-    if (minutes !== undefined) console.log(`harness           running for ${minutes} min`);
+  const shortcutRegistered = registerShortcut({
+    toggle: () => {
+      actions.togglePause();
+    },
+    hide: () => {
+      if (!hidden) actions.toggleHidden();
+    },
   });
+
+  if (await detectTray()) {
+    tray = createTray(appPath);
+    refreshMenus();
+  } else {
+    console.warn('no StatusNotifier tray on the session bus, tray disabled');
+  }
+
+  const applyConfig = (c: Config) => {
+    t = translator(c.locale, { name: c.name });
+    try {
+      setAutostart(c.autostart);
+    } catch (err) {
+      console.error('autostart update failed', err);
+    }
+    refreshMenus();
+  };
+  applyConfig(config.get());
+  config.onChange((c) => {
+    applyConfig(c);
+    for (const w of [stage.win, ...openSettingsWindows()]) {
+      w.webContents.send(IPC.configChanged, c);
+    }
+  });
+
+  function openSettingsWindows() {
+    return BrowserWindow.getAllWindows().filter((w) => w !== stage.win);
+  }
+
+  ipcMain.handle(IPC.configGet, () => config.get());
+  ipcMain.handle(IPC.configSet, (_event, patch: Partial<Config>) => config.set(patch));
+  ipcMain.handle(IPC.environmentGet, (): EnvironmentInfo => ({
+    trayAvailable: tray !== undefined,
+    shortcut: SHORTCUT,
+    shortcutRegistered,
+    autostartPath: autostartPath(),
+  }));
 
   let drag: DragStart | undefined;
   ipcMain.on(IPC.dragStart, (_event, offset: DragStart) => {
     drag = offset;
+    actor = reduce(actor, { type: 'drag-start' }, target);
   });
   ipcMain.on(IPC.dragEnd, () => {
     drag = undefined;
     const b = stage.bounds();
-    state = { ...state, x: b.x, y: b.y, displayId: screen.getDisplayMatching(b).id };
+    const displayId = screen.getDisplayMatching(b).id;
+    actor = reduce(actor, { type: 'drag-end', x: b.x, y: b.y, displayId }, target);
+  });
+  let menuShown = false;
+  let openMenu: Menu | undefined;
+  ipcMain.on(IPC.contextMenu, () => {
+    openMenu = Menu.buildFromTemplate(menuTemplate(t, { paused: actor.paused, hidden }, actions));
+    openMenu.on('menu-will-show', () => {
+      menuShown = true;
+    });
+    openMenu.popup({ window: stage.win });
   });
 
-  let loop: NodeJS.Timeout | undefined;
+  // Drives the renderer without a human: right click, drag, settings window. It proves the
+  // wiring, not that XWayland delivers real input.
+  function selfTest(): void {
+    const send = (type: 'mouseDown' | 'mouseUp', button: 'left' | 'right') => {
+      stage.win.webContents.sendInputEvent({ type, x: 48, y: 48, button, clickCount: 1 });
+    };
+    const at = (ms: number, fn: () => void) => setTimeout(fn, ms);
+    at(2000, () => {
+      send('mouseDown', 'right');
+      send('mouseUp', 'right');
+    });
+    at(2800, () => {
+      console.log(`self-test menu    ${menuShown ? 'shown' : 'not shown'}`);
+      openMenu?.closePopup();
+    });
+    const before = { ...stage.bounds() };
+    at(3500, () => {
+      send('mouseDown', 'left');
+    });
+    at(4000, () => {
+      const during = drag !== undefined && actor.pose === 'drag';
+      send('mouseUp', 'left');
+      at(200, () => {
+        const after = stage.bounds();
+        console.log(
+          `self-test drag    ${during ? 'ok' : 'failed'} ${before.x},${before.y} -> ${after.x},${after.y} pose ${actor.pose}`,
+        );
+      });
+    });
+    at(5000, () => {
+      const w = openSettings(appPath);
+      w.webContents.once('did-finish-load', () => {
+        console.log('self-test settings loaded');
+        at(1500, () => {
+          const dir = process.env.WISP_SELFTEST_SHOTS;
+          if (dir) {
+            void Promise.all([
+              w.webContents.capturePage(),
+              stage.win.webContents.capturePage(),
+            ]).then(([settingsShot, mascotShot]) => {
+              writeFileSync(join(dir, 'settings.png'), settingsShot.toPNG());
+              writeFileSync(join(dir, 'mascot.png'), mascotShot.toPNG());
+              w.close();
+            });
+          } else {
+            w.close();
+          }
+        });
+      });
+    });
+  }
+
+  let lastPose = '';
+  const pushPose = () => {
+    const key = `${actor.pose}/${actor.facing}`;
+    if (key === lastPose) return;
+    lastPose = key;
+    stage.win.webContents.send(IPC.pose, { pose: actor.pose, facing: actor.facing });
+  };
+
+  // XWayland only updates the X pointer while it is over an X window, so a position that
+  // did not change since the last tick is treated as unknown rather than trusted.
+  let lastCursor: Point | undefined;
+  const cursorDisplayId = (): number | undefined => {
+    const p = screen.getCursorScreenPoint();
+    const moved = lastCursor?.x !== p.x || lastCursor.y !== p.y;
+    lastCursor = p;
+    return moved ? screen.getDisplayNearestPoint(p).id : undefined;
+  };
+
   stage.win.webContents.once('did-finish-load', () => {
+    console.log(formatEnvironment(describeEnvironment(stage.win)));
+    console.log(`setShape          ${stage.cutCorners()}`);
+    console.log(
+      `shortcut          ${SHORTCUT} ${shortcutRegistered ? 'registered' : 'not registered'}`,
+    );
+    console.log(`tray              ${tray ? 'available' : 'unavailable'}`);
+    if (harness)
+      console.log(`harness           ${minutes ?? 0} min, results in ${harness.resultsDir}`);
+    pushPose();
+    if (process.env.WISP_SELFTEST) selfTest();
+    if (process.env.WISP_OPEN_SETTINGS) openSettings(appPath);
+
     let last = performance.now();
-    loop = setInterval(() => {
+    setInterval(() => {
       const now = performance.now();
       const dt = now - last;
       last = now;
-      harness.tick(dt);
+      harness?.tick(dt);
 
       if (drag) {
         const p = screen.getCursorScreenPoint();
+        lastCursor = p;
         stage.moveTo(p.x - drag.offsetX, p.y - drag.offsetY);
         return;
       }
-      state = step(state, target, dt);
-      stage.moveTo(Math.round(state.x), Math.round(state.y));
+      actor = reduce(
+        actor,
+        {
+          type: 'tick',
+          dtMs: dt,
+          rng: Math.random,
+          cursor: { displayId: cursorDisplayId(), idleMs: powerMonitor.getSystemIdleTime() * 1000 },
+          followCursor: config.get().followCursor,
+        },
+        target,
+      );
+      if (!hidden) stage.moveTo(Math.round(actor.x), Math.round(actor.y));
+      pushPose();
     }, TICK_MS);
-    if (process.env.WISP_DRAG_SELFTEST) dragSelfTest();
   });
 
-  // Drives the renderer's pointer handlers without a human, to prove the mousedown, IPC
-  // and setBounds chain is wired. It cannot prove that XWayland delivers real clicks.
-  function dragSelfTest(): void {
-    const before = stage.bounds();
-    setTimeout(() => {
-      stage.win.webContents.sendInputEvent({
-        type: 'mouseDown',
-        x: 48,
-        y: 48,
-        button: 'left',
-        clickCount: 1,
-      });
-    }, 3000);
-    setTimeout(() => {
-      const during = drag !== undefined;
-      stage.win.webContents.sendInputEvent({
-        type: 'mouseUp',
-        x: 48,
-        y: 48,
-        button: 'left',
-        clickCount: 1,
-      });
-      setTimeout(() => {
-        const after = stage.bounds();
-        console.log(
-          `drag self-test    start=${during ? 'received' : 'missing'} end=${drag === undefined ? 'received' : 'missing'}` +
-            ` bounds ${before.x},${before.y} -> ${after.x},${after.y}`,
-        );
-      }, 200);
-    }, 3500);
-  }
-
-  let sampleCount = 0;
-  const sampler = setInterval(() => {
-    const samples = harness.sampleProcesses();
-    const system = harness.sampleSystem();
-    sampleCount += 1;
-    if (sampleCount === 1) {
-      harness.discardFirstCpuSample();
-      return;
-    }
-    const total = samples.reduce((sum, s) => sum + s.cpuPercent, 0);
-    const parts = samples.map((s) => `${s.type} ${s.cpuPercent.toFixed(1)}%`).join(', ');
-    const sys = system.map((s) => `${s.name} ${s.cpuPercent.toFixed(1)}%`).join(', ');
-    console.log(
-      `t=${samples[0]?.elapsedS.toFixed(0) ?? '?'}s cpu ${total.toFixed(1)}% (${parts}) system: ${sys}`,
-    );
-    logCursor();
-  }, SAMPLE_MS);
-
-  let done = false;
-  const finish = () => {
-    if (done) return;
-    done = true;
-    clearInterval(loop);
-    clearInterval(sampler);
-    console.log('\n' + formatSummary(harness.finish()));
-    console.log(`results written to ${harness.resultsDir}`);
-  };
-
-  if (minutes !== undefined) {
+  if (harness) {
+    let sampleCount = 0;
+    setInterval(() => {
+      const samples = harness.sampleProcesses();
+      const system = harness.sampleSystem();
+      sampleCount += 1;
+      if (sampleCount === 1) {
+        harness.discardFirstCpuSample();
+        return;
+      }
+      const total = samples.reduce((sum, s) => sum + s.cpuPercent, 0);
+      const sys = system.map((s) => `${s.name} ${s.cpuPercent.toFixed(1)}%`).join(', ');
+      console.log(
+        `t=${samples[0]?.elapsedS.toFixed(0) ?? '?'}s cpu ${total.toFixed(1)}% pose ${actor.pose} system: ${sys}`,
+      );
+    }, SAMPLE_MS);
     setTimeout(
       () => {
-        finish();
+        console.log('\n' + formatSummary(harness.finish()));
         app.quit();
       },
-      minutes * 60 * 1000,
+      (minutes ?? 0) * 60 * 1000,
     );
   }
-  app.on('before-quit', finish);
+
   app.on('window-all-closed', () => {
-    app.quit();
+    // The mascot window is hidden rather than closed, so this only fires on quit.
   });
 });

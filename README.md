@@ -1,9 +1,10 @@
 # Wisp
 
 A desktop mascot for GNOME on Wayland, in the spirit of Shimeji. Later phases will read tasks
-and meetings through MCP and nudge you about them. This repository is at Phase 0: a spike
-that proves the window mechanics work on the target environment and measures what they cost.
-Nothing here is the app yet, except `src/main/brain/movement.ts`, which is written to last.
+and meetings through MCP and nudge you about them. Phase 0 proved the window mechanics on
+the target environment and measured what they cost. Phase 1 makes the creature alive without
+any external data: it walks, sits, sleeps and follows you between monitors, and you can pause,
+hide or quit it from a right-click menu, a global shortcut or the tray.
 
 ## Target
 
@@ -20,13 +21,52 @@ Requires Node 22 or newer.
 
 ```
 npm install
-npm run dev          # electron-vite with hot reload
-npm run test         # vitest, covers the movement module
+npm run dev            # electron-vite with hot reload
+npm run start          # build and run
+npm run test           # vitest: movement, follow, actor reducer, sprites, i18n
 npm run typecheck
 npm run lint
-npm run harness      # builds, then runs the 10 minute measurement and prints a summary
+npm run sprites        # regenerate the placeholder sprite sheet and icons
+npm run harness        # build, run the 10 minute measurement, print a summary
 npm run harness:short  # same, 1 minute, with a scripted drag self-test
 ```
+
+## Using it
+
+- Left button drags the mascot. Drop it and it falls to the bottom of the work area.
+- Right button opens the menu: Pause or Resume, Hide or Show, Poke, Settings, Quit. This is
+  the kill switch that always works.
+- `Control+Alt+W` pauses or resumes; two quick presses hide. Registering succeeds on X11 but
+  a Wayland compositor may never deliver the key to an XWayland client, so the settings page
+  shows the registration status and the menu stays primary.
+- The tray needs a StatusNotifier host. Ubuntu GNOME ships the AppIndicator extension, plain
+  GNOME does not. Wisp checks the session bus at start and disables the tray if none exists.
+- Settings: name (used as `{name}` in the mascot's lines), language (English only for now),
+  start with the session (writes `~/.config/autostart/wisp.desktop`), follow the cursor.
+- Config lives in `~/.config/wisp/config.json`.
+
+## How it behaves
+
+All decisions are pure functions in `src/main/brain/`, tested with time and randomness
+injected. `actor.ts` is a reducer over the poses idle, walk, sit, sleep, alert and drag.
+`movement.ts` eases to a constant walking speed, bounces on an edge with no neighbour and
+crosses to a touching display, mapping Y proportionally and landing on the new ground.
+`follow.ts` holds a 3 second hysteresis before the mascot walks toward the monitor where the
+pointer is. Sleep comes after 5 minutes without input, read from the session idle timer.
+
+Following has a known limit under XWayland: the X server only learns the pointer position
+while the pointer is over an X11 window. Wisp treats a position that did not change since the
+last tick as unknown, so it never chases a stale point, but on a desktop with no other X11
+apps it only sees the pointer when it is over the mascot itself. The GNOME extension in Phase
+8 is the real fix.
+
+## Sprites
+
+`resources/sprites/wisp.png` and `wisp.json` follow the Aseprite JSON export (hash format,
+tags named after the poses). The current files are a code-generated placeholder from
+`scripts/make-placeholder-sprites.mjs`. Export from Aseprite with the same tag names and drop
+the two files in; nothing else changes. Frames are 32x32 drawn at 3x on a canvas with
+`image-rendering: pixelated`.
 
 Two flags are passed on the command line by every script and both are required:
 
@@ -60,8 +100,8 @@ At startup the harness logs `XDG_SESSION_TYPE`, the Electron version, the reques
 effective Ozone platform (verified by querying the window's XID with `xprop`), the display
 layout, whether `setShape` worked, and the cursor position with the display it is on.
 
-Acceptance for Phase 0: walks end to end for 10 minutes below 3 percent CPU and can be
-dragged with the mouse.
+Phase 0 acceptance was: walks end to end for 10 minutes below 3 percent CPU and can be
+dragged with the mouse. Run the harness again after changes that touch the loop.
 
 ## Findings from the spike
 
@@ -88,13 +128,20 @@ dragged with the mouse.
 ## Layout
 
 ```
-src/main/index.ts          entry, loop, harness wiring
-src/main/brain/movement.ts pure movement step, tested
-src/main/stage/window.ts   the only place that calls setBounds, setShape, setAlwaysOnTop
-src/main/harness/          environment report, metrics, CSV, system sampler
-src/preload/index.ts       exposes dragStart and dragEnd to the renderer
-src/renderer/              React 18, a purple square that reports pointer down and up
-src/shared/ipc.ts          channel names and payload types
+src/main/index.ts            entry, loop, IPC, harness wiring
+src/main/brain/              pure: movement, follow hysteresis, actor reducer, tested
+src/main/stage/              the only place that calls setBounds, setShape, setAlwaysOnTop
+src/main/harness/            environment report, metrics, CSV, system sampler
+src/main/config.ts           JSON config store
+src/main/autostart.ts        .desktop file in ~/.config/autostart
+src/main/tray.ts             StatusNotifier detection and tray
+src/main/shortcut.ts         global shortcut
+src/main/menu.ts             context menu template
+src/preload/index.ts         window.wisp bridge
+src/renderer/                React 18: mascot canvas page and settings page
+src/shared/                  poses, config shape, IPC channels, i18n
+resources/sprites/           sprite sheet and Aseprite metadata
+scripts/                     placeholder sprite generator
 ```
 
 ## License

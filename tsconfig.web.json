@@ -6,6 +6,7 @@
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
     "types": ["vite/client"],
+    "resolveJsonModule": true,
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
@@ -16,5 +17,10 @@
     "noEmit": true,
     "composite": true
   },
-  "include": ["src/renderer/src/**/*", "src/preload/index.d.ts", "src/shared/**/*"]
+  "include": [
+    "src/renderer/src/**/*",
+    "src/preload/index.d.ts",
+    "src/shared/**/*",
+    "resources/sprites/wisp.json"
+  ]
 }
