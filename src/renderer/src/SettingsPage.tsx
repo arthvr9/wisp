@@ -239,6 +239,91 @@ export function SettingsPage() {
           />
         </section>
 
+        <section className="field">
+          <span className="label">{t('settings.nudges')}</span>
+          <p className="hint">{t('settings.nudges.hint')}</p>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={config.quietHours.enabled}
+              onChange={(e) => {
+                save({ quietHours: { ...config.quietHours, enabled: e.target.checked } });
+              }}
+            />
+            <span>{t('settings.quietHours')}</span>
+          </label>
+          <div className="row">
+            <label className="inline" htmlFor="quietFrom">
+              {t('settings.quietHours.from')}
+            </label>
+            <input
+              id="quietFrom"
+              type="time"
+              value={config.quietHours.start}
+              disabled={!config.quietHours.enabled}
+              onChange={(e) => {
+                if (e.target.value)
+                  save({ quietHours: { ...config.quietHours, start: e.target.value } });
+              }}
+            />
+            <label className="inline" htmlFor="quietTo">
+              {t('settings.quietHours.to')}
+            </label>
+            <input
+              id="quietTo"
+              type="time"
+              value={config.quietHours.end}
+              disabled={!config.quietHours.enabled}
+              onChange={(e) => {
+                if (e.target.value)
+                  save({ quietHours: { ...config.quietHours, end: e.target.value } });
+              }}
+            />
+          </div>
+          <div className="row">
+            <label className="inline" htmlFor="perHour">
+              {t('settings.budget.perHour')}
+            </label>
+            <input
+              id="perHour"
+              type="number"
+              min={1}
+              max={20}
+              value={config.budget.maxPerHour}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                if (n >= 1 && n <= 20) save({ budget: { ...config.budget, maxPerHour: n } });
+              }}
+            />
+            <label className="inline" htmlFor="perDay">
+              {t('settings.budget.perDay')}
+            </label>
+            <input
+              id="perDay"
+              type="number"
+              min={1}
+              max={100}
+              value={config.budget.maxPerDay}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                if (n >= 1 && n <= 100) save({ budget: { ...config.budget, maxPerDay: n } });
+              }}
+            />
+          </div>
+          {signals?.silence.snoozedUntil !== undefined && (
+            <p className="hint notice">
+              {t('settings.nudges.snoozed', { time: clock(signals.silence.snoozedUntil) })}
+            </p>
+          )}
+          {signals?.silence.activeSource !== undefined && (
+            <p className="hint notice">
+              {t('settings.nudges.silenced', {
+                source: t(`silence.${signals.silence.activeSource}`),
+              })}
+            </p>
+          )}
+        </section>
+
         {environment && !environment.trayAvailable && (
           <section className="field">
             <p className="hint notice">{t('settings.tray.unavailable')}</p>

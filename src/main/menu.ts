@@ -5,12 +5,14 @@ import type { Translate } from '../shared/i18n';
 export interface MenuState {
   paused: boolean;
   hidden: boolean;
+  snoozed: boolean;
 }
 
 export interface MenuActions {
   togglePause(): void;
   toggleHidden(): void;
   poke(): void;
+  toggleSnooze(): void;
   openSettings(): void;
   quit(): void;
 }
@@ -37,6 +39,12 @@ export function menuTemplate(
       label: t('menu.poke'),
       click: () => {
         actions.poke();
+      },
+    },
+    {
+      label: state.snoozed ? t('menu.unsnooze') : t('menu.snooze'),
+      click: () => {
+        actions.toggleSnooze();
       },
     },
     { type: 'separator' },

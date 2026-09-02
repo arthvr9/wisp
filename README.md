@@ -4,9 +4,11 @@ A desktop mascot for GNOME on Wayland, in the spirit of Shimeji. Later phases wi
 and meetings through MCP and nudge you about them. Phase 0 proved the window mechanics on
 the target environment and measured what they cost. Phase 1 made the creature alive without
 any external data: it walks, sits, sleeps and follows you between monitors, and you can pause,
-hide or quit it from a right-click menu, a global shortcut or the tray. Phase 2 brings the
+hide or quit it from a right-click menu, a global shortcut or the tray. Phase 2 brought the
 first real signal: your open ClickUp tasks with a due date, read through the official ClickUp
-MCP server, shown in a speech bubble when they are about to be due.
+MCP server, shown in a speech bubble when they are about to be due. Phase 3 adds judgement: a
+rules table decides what deserves a bubble, silence windows decide when, and a hard budget caps
+how often.
 
 ## Target
 
@@ -76,7 +78,34 @@ server for your open tasks due between seven days ago and two weeks ahead, valid
 answer with Zod and stores the result in `~/.config/wisp/signals.sqlite` (the Node built-in
 `node:sqlite`, no native module). A task due within the warning window (30 minutes by
 default) makes the mascot stop, take the alert pose and show a bubble with the task name.
-Each task is announced once per kind: due soon, due now, overdue.
+What gets shown, and when, is decided by the nudge engine below.
+
+## Nudges
+
+`src/main/brain/nudge.ts` is a pure function over the cached signals, the history of what was
+already shown, the active silence windows and the budget. `now` is an argument, so the whole
+day can be simulated in tests. The rules:
+
+| Kind      | When                                       | Urgency | Repeats                                              |
+| --------- | ------------------------------------------ | ------- | ---------------------------------------------------- |
+| due-now   | within the last minute of the due time     | urgent  | once                                                 |
+| due-soon  | inside the warning window (30 min default) | normal  | once                                                 |
+| overdue   | past due by more than a minute             | normal  | after 1 h, then 4 h, then daily; stops after 14 days |
+| due-today | later today, outside the warning window    | low     | once per day                                         |
+
+Silence windows are one abstraction, `SilenceWindow[]`, with several sources:
+
+- Quiet hours from settings (19:00 to 08:00 by default). Urgent nudges still pass.
+- GNOME Do Not Disturb, read from `org.gnome.desktop.notifications show-banners` every 30 s.
+  Blocks everything.
+- Snooze for an hour from the right-click menu. Blocks everything.
+- A fullscreen X11 window in focus. Urgent still passes. Wayland-native fullscreen apps are
+  invisible from XWayland, so this source is partial.
+- Meetings arrive as a fifth source in Phase 5.
+
+The budget is a hard ceiling: at most 3 nudges per hour and 12 per day by default, urgent ones
+included. Excess is dropped, not queued, and shows up again on the next decision if still
+relevant. Settings shows when a silence source is active.
 
 The adapter discovers tool names at runtime by suffix (`filter_tasks`, `resolve_assignees`)
 because the official server's names were not verified against a live connection. The task
@@ -152,10 +181,11 @@ dragged with the mouse. Run the harness again after changes that touch the loop.
 
 ```
 src/main/index.ts            entry, loop, IPC, harness wiring
-src/main/brain/              pure: movement, follow hysteresis, actor reducer, due rules, tested
+src/main/brain/              pure: movement, follow, actor reducer, silence windows, nudge rules
 src/main/stage/              the only place that calls setBounds, setShape, setAlwaysOnTop
 src/main/harness/            environment report, metrics, CSV, system sampler
-src/main/connectors.ts       ties MCP host, signal store, scheduler and announcements together
+src/main/connectors.ts       ties MCP host, signal store, scheduler and nudge decisions together
+src/main/silence.ts          system silence sources: Do Not Disturb, X11 fullscreen, snooze
 src/main/mcp/                MCP client host, OAuth PKCE loopback provider, encrypted secrets
 src/main/signals/            SQLite cache with diff, scheduler with backoff, ClickUp adapter
 src/main/config.ts           JSON config store
