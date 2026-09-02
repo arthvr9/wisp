@@ -1,0 +1,23 @@
+html,
+body,
+#root {
+  margin: 0;
+  width: 96px;
+  height: 96px;
+  overflow: hidden;
+  background: transparent;
+  user-select: none;
+}
+
+.mascot {
+  width: 96px;
+  height: 96px;
+  background: #7c3aed;
+  border-radius: 8px;
+  cursor: grab;
+}
+
+.mascot.dragging {
+  background: #6d28d9;
+  cursor: grabbing;
+}
