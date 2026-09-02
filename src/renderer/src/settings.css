@@ -66,6 +66,71 @@ body {
 main {
   flex: 1;
   overflow-y: auto;
+  padding-right: 6px;
+  margin-right: -10px;
+  scrollbar-gutter: stable;
+}
+
+main::-webkit-scrollbar {
+  width: 8px;
+}
+
+main::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+main::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+  border: 2px solid var(--bg);
+}
+
+main::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
+.page {
+  animation: page-in 220ms ease-out both;
+}
+
+.field {
+  animation: field-in 260ms ease-out both;
+}
+
+.field:nth-child(2) {
+  animation-delay: 30ms;
+}
+.field:nth-child(3) {
+  animation-delay: 60ms;
+}
+.field:nth-child(4) {
+  animation-delay: 90ms;
+}
+.field:nth-child(5) {
+  animation-delay: 120ms;
+}
+.field:nth-child(6) {
+  animation-delay: 150ms;
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes field-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .field {
@@ -85,6 +150,7 @@ label,
 }
 
 input[type='text'],
+input[type='number'],
 select {
   display: block;
   width: 100%;
@@ -95,14 +161,27 @@ select {
   color: var(--fg);
   font: inherit;
   user-select: text;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+input[type='text']:hover:not(:focus),
+input[type='number']:hover:not(:focus) {
+  border-color: #a8a8a8;
 }
 
 input[type='text']:focus,
-select:focus,
+input[type='number']:focus,
+select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.25);
+}
+
 input[type='checkbox']:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
-  border-color: var(--accent);
 }
 
 select:disabled {
@@ -162,6 +241,18 @@ select:disabled {
   min-height: 16px;
   color: var(--accent);
   font-size: 12px;
+  animation: status-in 160ms ease-out both;
+}
+
+@keyframes status-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .actions {
@@ -173,14 +264,24 @@ select:disabled {
 button {
   font: inherit;
   padding: 5px 12px;
-  border: 1px solid #b9b3c4;
+  border: 1px solid var(--border);
+  border-radius: 2px;
   background: #fff;
-  color: #2e1a47;
+  color: var(--fg);
   cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    transform 80ms ease;
 }
 
 button:hover:not(:disabled) {
-  border-color: #7c3aed;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 button:disabled {
@@ -189,13 +290,31 @@ button:disabled {
 }
 
 button.primary {
-  background: #7c3aed;
-  border-color: #7c3aed;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+button.primary:hover:not(:disabled) {
+  background: #6d28d9;
+  border-color: #6d28d9;
   color: #fff;
 }
 
 input[type='number'] {
   width: 80px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page,
+  .field,
+  .status {
+    animation: none;
+  }
+  button,
+  input {
+    transition: none;
+  }
 }
 
 label.inline {
