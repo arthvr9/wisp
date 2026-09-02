@@ -1,4 +1,5 @@
 import type { NudgeBudget, QuietHours } from './nudges';
+import type { SpeechConfig } from './speech';
 
 export type Locale = 'en';
 
@@ -11,6 +12,7 @@ export interface Config {
   pollMinutes: number;
   quietHours: QuietHours;
   budget: NudgeBudget;
+  speech: SpeechConfig;
 }
 
 export const defaultConfig: Config = {
@@ -22,7 +24,10 @@ export const defaultConfig: Config = {
   pollMinutes: 5,
   quietHours: { enabled: true, start: '19:00', end: '08:00' },
   budget: { maxPerHour: 3, maxPerDay: 12 },
+  speech: { provider: 'off', baseUrl: '', model: '' },
 };
+
+const PROVIDERS = ['off', 'ollama', 'openai-compatible', 'anthropic'] as const;
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -44,6 +49,16 @@ export function normalizeConfig(raw: unknown): Config {
       enabled: typeof q.enabled === 'boolean' ? q.enabled : c.quietHours.enabled,
       start: typeof q.start === 'string' && TIME.test(q.start) ? q.start : c.quietHours.start,
       end: typeof q.end === 'string' && TIME.test(q.end) ? q.end : c.quietHours.end,
+    };
+  }
+  if (typeof r.speech === 'object' && r.speech !== null) {
+    const sp = r.speech as Record<string, unknown>;
+    c.speech = {
+      provider: (PROVIDERS as readonly unknown[]).includes(sp.provider)
+        ? (sp.provider as SpeechConfig['provider'])
+        : c.speech.provider,
+      baseUrl: typeof sp.baseUrl === 'string' ? sp.baseUrl.trim().slice(0, 200) : c.speech.baseUrl,
+      model: typeof sp.model === 'string' ? sp.model.trim().slice(0, 100) : c.speech.model,
     };
   }
   if (typeof r.budget === 'object' && r.budget !== null) {

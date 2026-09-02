@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, powerMonitor, screen } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, powerMonitor, safeStorage, screen } from 'electron';
 import type { Display, Point } from 'electron';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -11,7 +11,11 @@ import { groundY } from './brain/movement';
 import type { DisplayArea, Target } from './brain/movement';
 import { ConfigStore } from './config';
 import { Connectors } from './connectors';
+import { SecretStore } from './mcp';
 import { SilenceSources } from './silence';
+import { Voice } from './voice';
+import type { Celebration, Mood } from '../shared/mood';
+import type { SpeechEvent, SpeechRequest } from '../shared/speech';
 import type { Nudge } from '../shared/nudges';
 import { describeEnvironment, formatEnvironment } from './harness/environment';
 import { Harness, formatSummary } from './harness/metrics';
@@ -57,6 +61,17 @@ function harnessMinutes(): number | undefined {
 void app.whenReady().then(async () => {
   const appPath = app.getAppPath();
   const config = new ConfigStore(join(app.getPath('userData'), 'config.json'));
+  const broadcast = (channel: string, payload: unknown) => {
+    for (const w of BrowserWindow.getAllWindows()) w.webContents.send(channel, payload);
+  };
+  const voice = new Voice(
+    new SecretStore(safeStorage, join(app.getPath('userData'), 'secrets')),
+    config.get().speech,
+    (status) => {
+      broadcast(IPC.speechStatusChanged, status);
+    },
+  );
+  void voice.start();
   const minutes = harnessMinutes();
   const harness =
     minutes === undefined ? undefined : new Harness(TICK_MS, join(appPath, 'harness-results'));
@@ -93,13 +108,48 @@ void app.whenReady().then(async () => {
         return t('phrase.dueToday', { title: n.title });
     }
   };
+  let speaking = false;
+  const sayThen = (
+    event: SpeechEvent,
+    fallback: string,
+    context: SpeechRequest['context'],
+    show: (text: string) => void,
+  ) => {
+    speaking = true;
+    void voice
+      .say(event, config.get().name, connectors.currentMood(), fallback, context)
+      .then((r) => {
+        show(r.text);
+      })
+      .finally(() => {
+        speaking = false;
+      });
+  };
   const showNext = (nowMs: number) => {
     const next = queue.shift();
     if (!next) return;
     connectors.recordShown(next, nowMs);
-    bubble.show({ text: phrase(next), url: next.url });
-    bubbleUntil = nowMs + BUBBLE_MS;
-    actor = reduce(actor, { type: 'alert', ms: BUBBLE_MS }, target);
+    const context = { title: next.title, minutesLeft: next.minutesLeft, kind: next.kind };
+    sayThen('nudge', phrase(next), context, (text) => {
+      bubble.show({ text, url: next.url });
+      bubbleUntil = Date.now() + BUBBLE_MS;
+      actor = reduce(actor, { type: 'alert', ms: BUBBLE_MS }, target);
+    });
+  };
+  const celebrate = (c: Celebration) => {
+    const key =
+      c.intensity === 1
+        ? 'phrase.celebrate.1'
+        : c.intensity === 2
+          ? 'phrase.celebrate.2'
+          : 'phrase.celebrate.3';
+    const fallback = t(key, { title: c.titles[0] ?? '', count: c.count });
+    const ms = c.intensity === 1 ? 2500 : c.intensity === 2 ? 4000 : 6000;
+    sayThen('celebrate', fallback, { count: c.count, title: c.titles[0] }, (text) => {
+      bubble.show({ text });
+      bubbleUntil = Date.now() + Math.max(ms, 4000);
+      actor = reduce(actor, { type: 'celebrate', intensity: c.intensity }, target);
+    });
   };
 
   const connectors = new Connectors({
@@ -121,11 +171,33 @@ void app.whenReady().then(async () => {
       };
     },
     onStatus: (status) => {
-      for (const w of BrowserWindow.getAllWindows())
-        w.webContents.send(IPC.signalsStatusChanged, status);
+      broadcast(IPC.signalsStatusChanged, status);
     },
     onNudges: enqueue,
+    onMood: (mood) => {
+      onMood(mood);
+    },
+    onCelebration: celebrate,
   });
+  const onMood = (mood: Mood) => {
+    broadcast(IPC.moodChanged, mood);
+    tray?.setMood(hidden ? 'neutral' : mood);
+    pushPose();
+    refreshMenus();
+  };
+  ipcMain.handle(IPC.speechStatusGet, () => voice.current());
+  ipcMain.handle(IPC.speechSetApiKey, (_event, key: string) => voice.setApiKey(key));
+  ipcMain.handle(IPC.speechTest, async () => {
+    const r = await voice.say(
+      'poke',
+      config.get().name,
+      connectors.currentMood(),
+      t('phrase.poke'),
+      {},
+    );
+    return { text: r.text, source: r.source, latencyMs: r.latencyMs };
+  });
+  ipcMain.handle(IPC.moodGet, () => connectors.currentMood());
   ipcMain.handle(IPC.clickupConnect, () => connectors.connect());
   ipcMain.handle(IPC.clickupDisconnect, () => connectors.disconnect());
   ipcMain.handle(IPC.clickupSyncNow, () => connectors.syncNow());
@@ -157,10 +229,15 @@ void app.whenReady().then(async () => {
       hidden = !hidden;
       if (hidden) stage.win.hide();
       else stage.win.showInactive();
+      tray?.setMood(hidden ? 'neutral' : connectors.currentMood());
       refreshMenus();
     },
     poke() {
-      actor = reduce(actor, { type: 'alert' }, target);
+      actor = reduce(actor, { type: 'alert', ms: 4000 }, target);
+      sayThen('poke', t('phrase.poke'), {}, (text) => {
+        bubble.show({ text });
+        bubbleUntil = Date.now() + 4000;
+      });
     },
     toggleSnooze() {
       const now = Date.now();
@@ -217,6 +294,7 @@ void app.whenReady().then(async () => {
   applyConfig(config.get());
   config.onChange((c) => {
     applyConfig(c);
+    voice.configure(c.speech);
     for (const w of [stage.win, ...openSettingsWindows()]) {
       w.webContents.send(IPC.configChanged, c);
     }
@@ -318,12 +396,20 @@ void app.whenReady().then(async () => {
   }
 
   let lastPose = '';
-  const pushPose = () => {
-    const key = `${actor.pose}/${actor.facing}`;
+  function pushPose(): void {
+    const m = connectors.modifiers();
+    const intensity = actor.celebrateIntensity;
+    const key = `${actor.pose}/${actor.facing}/${m.expression}/${m.speedFactor}/${intensity ?? ''}`;
     if (key === lastPose) return;
     lastPose = key;
-    stage.win.webContents.send(IPC.pose, { pose: actor.pose, facing: actor.facing });
-  };
+    stage.win.webContents.send(IPC.pose, {
+      pose: actor.pose,
+      facing: actor.facing,
+      expression: m.expression,
+      speedFactor: m.speedFactor,
+      ...(intensity === undefined ? {} : { intensity }),
+    });
+  }
 
   // XWayland only updates the X pointer while it is over an X window, so a position that
   // did not change since the last tick is treated as unknown rather than trusted.
@@ -370,6 +456,7 @@ void app.whenReady().then(async () => {
           rng: Math.random,
           cursor: { displayId: cursorDisplayId(), idleMs: powerMonitor.getSystemIdleTime() * 1000 },
           followCursor: config.get().followCursor,
+          mood: connectors.modifiers(),
         },
         target,
       );
@@ -387,7 +474,7 @@ void app.whenReady().then(async () => {
           const d = target.displays.find((x) => x.id === actor.displayId);
           bubble.follow(actor.x, actor.y, d?.x ?? 0, (d?.x ?? 0) + (d?.width ?? 1920));
         }
-      } else if (queue.length > 0 && !hidden && !actor.paused) {
+      } else if (queue.length > 0 && !hidden && !actor.paused && !speaking) {
         showNext(nowMs);
       }
     }, TICK_MS);

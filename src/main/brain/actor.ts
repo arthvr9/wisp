@@ -1,4 +1,5 @@
 import type { Facing, Pose } from '../../shared/actor';
+import type { MoodModifiers } from '../../shared/mood';
 import { followCursor, initialFollow } from './follow';
 import type { FollowState } from './follow';
 import { WALK_ACCEL_PX_S2, directionTo, groundY, walk } from './movement';
@@ -17,7 +18,10 @@ export interface ActorState {
   goalDisplayId?: number;
   paused: boolean;
   follow: FollowState;
+  celebrateIntensity?: Intensity;
 }
+
+export type Intensity = 1 | 2 | 3;
 
 export type Rng = () => number;
 
@@ -27,7 +31,15 @@ export interface Cursor {
 }
 
 export type ActorAction =
-  | { type: 'tick'; dtMs: number; rng: Rng; cursor: Cursor; followCursor: boolean }
+  | {
+      type: 'tick';
+      dtMs: number;
+      rng: Rng;
+      cursor: Cursor;
+      followCursor: boolean;
+      mood?: MoodModifiers;
+    }
+  | { type: 'celebrate'; intensity: Intensity }
   | { type: 'drag-start' }
   | { type: 'drag-end'; x: number; y: number; displayId: number }
   | { type: 'alert'; ms?: number }
@@ -45,6 +57,9 @@ export const IDLE_MS: readonly [number, number] = [2000, 6000];
 export const WALK_MS: readonly [number, number] = [3000, 9000];
 export const SIT_MS: readonly [number, number] = [6000, 15_000];
 export const DEFAULT_IDLE_MS = 4000;
+export const CELEBRATE_MS: Record<Intensity, number> = { 1: 2500, 2: 4000, 3: 6000 };
+
+const NEUTRAL: MoodModifiers = { expression: 'plain', speedFactor: 1, pauseFactor: 1 };
 
 const RESTING: readonly Pose[] = ['idle', 'sit', 'sleep'];
 
@@ -68,6 +83,10 @@ function between(rng: Rng, range: readonly [number, number]): number {
   return range[0] + rng() * (range[1] - range[0]);
 }
 
+function rest(rng: Rng, range: readonly [number, number], mood: MoodModifiers): number {
+  return between(rng, range) * mood.pauseFactor;
+}
+
 function findDisplay(target: Target, id: number): DisplayArea | undefined {
   return target.displays.find((d) => d.id === id);
 }
@@ -87,7 +106,7 @@ function grounded(state: ActorState, target: Target): boolean {
 }
 
 function enter(state: ActorState, pose: Pose, untilMs: number): ActorState {
-  return { ...state, pose, poseMs: 0, poseUntilMs: untilMs };
+  return { ...state, pose, poseMs: 0, poseUntilMs: untilMs, celebrateIntensity: undefined };
 }
 
 function facingOf(vx: number, fallback: Facing): Facing {
@@ -106,39 +125,46 @@ function startWalk(state: ActorState, target: Target, rng: Rng): ActorState {
   return enter({ ...state, facing }, 'walk', between(rng, WALK_MS));
 }
 
-function nextPose(state: ActorState, target: Target, rng: Rng): ActorState {
+function nextPose(state: ActorState, target: Target, rng: Rng, mood: MoodModifiers): ActorState {
   if (state.goalDisplayId !== undefined) return startWalk(state, target, rng);
-  if (state.pose !== 'idle') return enter(state, 'idle', between(rng, IDLE_MS));
+  if (state.pose !== 'idle') return enter(state, 'idle', rest(rng, IDLE_MS, mood));
   const roll = rng();
   if (roll < 0.65) return startWalk(state, target, rng);
-  if (roll < 0.9) return enter(state, 'sit', between(rng, SIT_MS));
-  return enter(state, 'idle', between(rng, IDLE_MS));
+  if (roll < 0.9) return enter(state, 'sit', rest(rng, SIT_MS, mood));
+  return enter(state, 'idle', rest(rng, IDLE_MS, mood));
 }
 
-function goalSpeed(state: ActorState, dtMs: number): number {
+function goalSpeed(state: ActorState, dtMs: number, mood: MoodModifiers): number {
   if (state.pose !== 'walk' || state.paused) return 0;
   const remainingMs = state.poseUntilMs - state.poseMs;
   const brakeMs = (Math.abs(state.vx) / WALK_ACCEL_PX_S2) * 1000 + dtMs;
   if (remainingMs <= brakeMs) return 0;
-  return state.facing === 'left' ? -WALK_SPEED_PX_S : WALK_SPEED_PX_S;
+  const cruise = WALK_SPEED_PX_S * mood.speedFactor;
+  return state.facing === 'left' ? -cruise : cruise;
 }
 
-function move(state: ActorState, target: Target, dtMs: number): ActorState {
+function move(state: ActorState, target: Target, dtMs: number, mood: MoodModifiers): ActorState {
   const { x, y, vx, displayId } = state;
-  const moved = walk({ x, y, vx, displayId }, target, dtMs, goalSpeed(state, dtMs), {
+  const moved = walk({ x, y, vx, displayId }, target, dtMs, goalSpeed(state, dtMs, mood), {
     grounded: true,
   });
   const facing = state.pose === 'walk' ? facingOf(moved.vx, state.facing) : state.facing;
   return { ...state, ...moved, facing };
 }
 
-function fall(state: ActorState, target: Target, dtMs: number, rng: Rng): ActorState {
+function fall(
+  state: ActorState,
+  target: Target,
+  dtMs: number,
+  rng: Rng,
+  mood: MoodModifiers,
+): ActorState {
   const dt = Math.max(dtMs, 0) / 1000;
   const vy = Math.min(state.vy + GRAVITY_PX_S2 * dt, TERMINAL_PX_S);
   const y = state.y + vy * dt;
   const floor = ground(state, target);
   if (y < floor) return { ...state, y, vy };
-  return enter({ ...state, y: floor, vy: 0 }, 'idle', between(rng, IDLE_MS));
+  return enter({ ...state, y: floor, vy: 0 }, 'idle', rest(rng, IDLE_MS, mood));
 }
 
 function applyFollow(
@@ -164,9 +190,9 @@ function clearReachedGoal(state: ActorState): ActorState {
   return { ...state, goalDisplayId: undefined };
 }
 
-function applySleep(state: ActorState, cursor: Cursor, rng: Rng): ActorState {
+function applySleep(state: ActorState, cursor: Cursor, rng: Rng, mood: MoodModifiers): ActorState {
   if (state.pose === 'sleep') {
-    return cursor.idleMs < WAKE_BELOW_MS ? enter(state, 'idle', between(rng, IDLE_MS)) : state;
+    return cursor.idleMs < WAKE_BELOW_MS ? enter(state, 'idle', rest(rng, IDLE_MS, mood)) : state;
   }
   if (cursor.idleMs >= SLEEP_AFTER_MS && (state.pose === 'idle' || state.pose === 'sit')) {
     return enter(state, 'sleep', 0);
@@ -174,11 +200,30 @@ function applySleep(state: ActorState, cursor: Cursor, rng: Rng): ActorState {
   return state;
 }
 
-function expire(state: ActorState, target: Target, rng: Rng): ActorState {
-  if (state.poseUntilMs > 0 && state.poseMs >= state.poseUntilMs) {
-    return nextPose(state, target, rng);
+function expired(state: ActorState): boolean {
+  return state.poseUntilMs > 0 && state.poseMs >= state.poseUntilMs;
+}
+
+function expire(state: ActorState, target: Target, rng: Rng, mood: MoodModifiers): ActorState {
+  return expired(state) ? nextPose(state, target, rng, mood) : state;
+}
+
+function age(state: ActorState, dtMs: number): ActorState {
+  return { ...state, poseMs: state.poseMs + Math.max(dtMs, 0) };
+}
+
+function tickPaused(
+  state: ActorState,
+  target: Target,
+  dtMs: number,
+  mood: MoodModifiers,
+): ActorState {
+  let next = state;
+  if (next.pose === 'celebrate') {
+    next = age(next, dtMs);
+    if (expired(next)) next = enter(next, 'idle', DEFAULT_IDLE_MS);
   }
-  return state;
+  return move(next, target, dtMs, mood);
 }
 
 function tick(
@@ -187,19 +232,24 @@ function tick(
   action: Extract<ActorAction, { type: 'tick' }>,
 ): ActorState {
   const { dtMs, rng, cursor } = action;
-  if (!grounded(state, target)) return fall(state, target, dtMs, rng);
+  const mood = action.mood ?? NEUTRAL;
+  if (!grounded(state, target)) return fall(state, target, dtMs, rng, mood);
   if (state.pose === 'drag') return state;
 
   let next = clearReachedGoal(applyFollow(state, cursor, dtMs, action.followCursor));
-  if (next.paused) return move(next, target, dtMs);
+  if (next.paused) return tickPaused(next, target, dtMs, mood);
 
-  next = { ...next, poseMs: next.poseMs + Math.max(dtMs, 0) };
-  next = applySleep(next, cursor, rng);
+  next = applySleep(age(next, dtMs), cursor, rng, mood);
   if (next.goalDisplayId !== undefined && RESTING.includes(next.pose)) {
     next = startWalk(next, target, rng);
   }
-  next = expire(next, target, rng);
-  return clearReachedGoal(move(next, target, dtMs));
+  next = expire(next, target, rng, mood);
+  return clearReachedGoal(move(next, target, dtMs, mood));
+}
+
+function celebrate(state: ActorState, target: Target, intensity: Intensity): ActorState {
+  if (state.pose === 'drag' || !grounded(state, target)) return state;
+  return { ...enter(state, 'celebrate', CELEBRATE_MS[intensity]), celebrateIntensity: intensity };
 }
 
 function dragEnd(
@@ -248,6 +298,8 @@ export function reduce(state: ActorState, action: ActorAction, target: Target): 
     case 'alert':
       if (state.pose === 'drag' || !grounded(state, target)) return state;
       return enter(state, 'alert', action.ms ?? ALERT_MS);
+    case 'celebrate':
+      return celebrate(state, target, action.intensity);
     case 'pause':
       return { ...state, paused: true };
     case 'resume':

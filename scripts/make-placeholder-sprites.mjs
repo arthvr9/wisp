@@ -1,5 +1,10 @@
 // Placeholder art until a real Aseprite export replaces resources/sprites/wisp.{png,json}.
 // Run with: node scripts/make-placeholder-sprites.mjs
+//
+// The JSON follows the Aseprite "hash" export. `meta.wisp` is a Wisp extension the exporter
+// does not produce: `meta.wisp.bob.offsetX[i]` and `offsetY[i]` say how far frame i moves the
+// eyes away from their idle position, so the renderer can place the expression overlay on the
+// eyes of a frame that bobs. Real art either fills it in by hand or leaves it out (zero offsets).
 import { Buffer } from 'node:buffer';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -13,6 +18,7 @@ const FRAME = 32;
 const COLUMNS = 4;
 
 /** @typedef {number[]} Rgba */
+/** @typedef {'bright' | 'plain' | 'low'} Expression */
 
 /** @type {Record<string, Rgba>} */
 const PALETTE = {
@@ -32,16 +38,32 @@ const POSES = [
   { name: 'sleep', frames: 2, duration: 900 },
   { name: 'alert', frames: 2, duration: 120 },
   { name: 'drag', frames: 2, duration: 300 },
+  { name: 'celebrate', frames: 3, duration: 160 },
+];
+
+/** @type {Expression[]} */
+const EXPRESSIONS = ['bright', 'plain', 'low'];
+
+/** @type {{ mood: string; expression: Expression; brightness: number; saturation: number }[]} */
+const MOODS = [
+  { mood: 'dejected', expression: 'low', brightness: 0.78, saturation: 0.55 },
+  { mood: 'stressed', expression: 'low', brightness: 0.9, saturation: 0.85 },
+  { mood: 'uneasy', expression: 'plain', brightness: 0.95, saturation: 0.95 },
+  { mood: 'calm', expression: 'plain', brightness: 1, saturation: 1 },
+  { mood: 'cheerful', expression: 'bright', brightness: 1.08, saturation: 1 },
+  { mood: 'elated', expression: 'bright', brightness: 1.18, saturation: 1.05 },
 ];
 
 class Canvas {
   /**
    * @param {number} width
    * @param {number} height
+   * @param {Record<string, Rgba>} palette
    */
-  constructor(width, height) {
+  constructor(width, height, palette = PALETTE) {
     this.width = width;
     this.height = height;
+    this.palette = palette;
     this.data = new Uint8Array(width * height * 4);
   }
 
@@ -88,6 +110,27 @@ class Canvas {
 }
 
 /**
+ * @param {number} brightness
+ * @param {number} saturation
+ * @returns {Record<string, Rgba>}
+ */
+function tintPalette(brightness, saturation) {
+  /** @type {Record<string, Rgba>} */
+  const out = {};
+  for (const [name, [r, g, b, a]] of Object.entries(PALETTE)) {
+    if (name === 'eye' || name === 'white') {
+      out[name] = [r, g, b, a];
+      continue;
+    }
+    const grey = 0.299 * r + 0.587 * g + 0.114 * b;
+    const channel = (/** @type {number} */ c) =>
+      Math.max(0, Math.min(255, Math.round((grey + (c - grey) * saturation) * brightness)));
+    out[name] = [channel(r), channel(g), channel(b), a];
+  }
+  return out;
+}
+
+/**
  * @param {number} cx
  * @param {number} cy
  * @param {number} rx
@@ -115,7 +158,7 @@ function ellipseMask(cx, cy, rx, ry, width, height) {
  * @param {number} ry
  */
 function paintBlob(canvas, cx, cy, rx, ry) {
-  const { width, height } = canvas;
+  const { width, height, palette } = canvas;
   const mask = ellipseMask(cx, cy, rx, ry, width, height);
   /**
    * @param {number} x
@@ -126,14 +169,14 @@ function paintBlob(canvas, cx, cy, rx, ry) {
     for (let x = 0; x < width; x++) {
       if (!inside(x, y)) continue;
       const edge = !inside(x - 1, y) || !inside(x + 1, y) || !inside(x, y - 1) || !inside(x, y + 1);
-      canvas.set(x, y, edge ? PALETTE.outline : PALETTE.body);
+      canvas.set(x, y, edge ? palette.outline : palette.body);
     }
   }
   const hx = Math.round(cx - rx * 0.45);
   const hy = Math.round(cy - ry * 0.55);
-  canvas.set(hx, hy, PALETTE.light);
-  canvas.set(hx + 1, hy, PALETTE.light);
-  canvas.set(hx, hy + 1, PALETTE.light);
+  canvas.set(hx, hy, palette.light);
+  canvas.set(hx + 1, hy, palette.light);
+  canvas.set(hx, hy + 1, palette.light);
 }
 
 /**
@@ -144,50 +187,106 @@ function paintBlob(canvas, cx, cy, rx, ry) {
  * @param {number} lean
  */
 function paintFlame(canvas, baseX, baseY, height, lean) {
+  const { palette } = canvas;
   for (let i = 0; i < height; i++) {
     const y = baseY - i;
     const shift = Math.round((i / height) * lean);
     const halfWidth = i < height / 2 ? 1 : 0;
     for (let dx = -halfWidth; dx <= halfWidth; dx++) {
       const isTip = i >= height - 2;
-      canvas.set(baseX + shift + dx, y, isTip ? PALETTE.tip : PALETTE.light);
+      canvas.set(baseX + shift + dx, y, isTip ? palette.tip : palette.light);
     }
   }
-  canvas.set(baseX, baseY, PALETTE.light);
+  canvas.set(baseX, baseY, palette.light);
 }
 
 /**
+ * Eyes sit at rows cy-1..cy+1, columns cx-2..cx+5. The wide style uses the whole box.
  * @param {Canvas} canvas
  * @param {number} cx
  * @param {number} cy
  * @param {string} style
  */
 function paintEyes(canvas, cx, cy, style) {
+  const { palette } = canvas;
   const leftX = cx - 1;
   const rightX = cx + 4;
   if (style === 'closed') {
     for (const x of [leftX, rightX]) {
-      canvas.set(x, cy, PALETTE.eye);
-      canvas.set(x + 1, cy, PALETTE.eye);
+      canvas.set(x, cy, palette.eye);
+      canvas.set(x + 1, cy, palette.eye);
+    }
+    return;
+  }
+  if (style === 'happy') {
+    for (const x of [leftX - 1, rightX - 1]) {
+      canvas.set(x, cy, palette.eye);
+      canvas.set(x + 1, cy - 1, palette.eye);
+      canvas.set(x + 2, cy, palette.eye);
     }
     return;
   }
   if (style === 'wide') {
     for (const x of [leftX - 1, rightX - 1]) {
       for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = 0; dx < 3; dx++) canvas.set(x + dx, cy + dy, PALETTE.white);
+        for (let dx = 0; dx < 3; dx++) canvas.set(x + dx, cy + dy, palette.white);
       }
-      canvas.set(x + 1, cy, PALETTE.eye);
-      canvas.set(x + 2, cy, PALETTE.eye);
+      canvas.set(x + 1, cy, palette.eye);
+      canvas.set(x + 2, cy, palette.eye);
+    }
+    return;
+  }
+  if (style === 'half') {
+    for (const x of [leftX, rightX]) {
+      canvas.set(x, cy - 1, palette.outline);
+      canvas.set(x + 1, cy - 1, palette.outline);
+      canvas.set(x, cy, palette.eye);
+      canvas.set(x + 1, cy, palette.eye);
     }
     return;
   }
   for (const x of [leftX, rightX]) {
-    canvas.set(x, cy - 1, PALETTE.white);
-    canvas.set(x + 1, cy - 1, PALETTE.eye);
-    canvas.set(x, cy, PALETTE.eye);
-    canvas.set(x + 1, cy, PALETTE.eye);
+    canvas.set(x, cy - 1, palette.white);
+    canvas.set(x + 1, cy - 1, palette.eye);
+    canvas.set(x, cy, palette.eye);
+    canvas.set(x + 1, cy, palette.eye);
   }
+}
+
+/**
+ * @param {Canvas} canvas
+ * @param {number} cx
+ * @param {number} y
+ * @param {'smile' | 'flat'} shape
+ */
+function paintMouth(canvas, cx, y, shape) {
+  const { palette } = canvas;
+  for (let dx = 1; dx <= 3; dx++) canvas.set(cx + dx, y, palette.eye);
+  if (shape === 'smile') {
+    canvas.set(cx, y - 1, palette.eye);
+    canvas.set(cx + 4, y - 1, palette.eye);
+  }
+}
+
+/**
+ * Eyes and mouth for a mood. cy is the eye row, the same one paintEyes uses.
+ * @param {Canvas} canvas
+ * @param {number} cx
+ * @param {number} cy
+ * @param {Expression} expression
+ */
+function paintExpression(canvas, cx, cy, expression) {
+  if (expression === 'bright') {
+    paintEyes(canvas, cx, cy, 'wide');
+    paintMouth(canvas, cx, cy + 3, 'smile');
+    return;
+  }
+  if (expression === 'low') {
+    paintEyes(canvas, cx, cy, 'half');
+    paintMouth(canvas, cx, cy + 3, 'flat');
+    return;
+  }
+  paintEyes(canvas, cx, cy, 'open');
 }
 
 /**
@@ -198,9 +297,24 @@ function paintEyes(canvas, cx, cy, style) {
  * @param {number} rightShift
  */
 function paintFeet(canvas, cx, y, leftShift, rightShift) {
+  const { palette } = canvas;
   for (let dx = 0; dx < 2; dx++) {
-    canvas.set(cx - 4 + leftShift + dx, y, PALETTE.outline);
-    canvas.set(cx + 2 + rightShift + dx, y, PALETTE.outline);
+    canvas.set(cx - 4 + leftShift + dx, y, palette.outline);
+    canvas.set(cx + 2 + rightShift + dx, y, palette.outline);
+  }
+}
+
+/**
+ * @param {Canvas} canvas
+ * @param {number} cx
+ * @param {number} cy
+ * @param {number} rx
+ */
+function paintArmsUp(canvas, cx, cy, rx) {
+  const { palette } = canvas;
+  for (let i = 0; i < 3; i++) {
+    canvas.set(cx - rx - i, cy - 2 - i, palette.outline);
+    canvas.set(cx + rx + i, cy - 2 - i, palette.outline);
   }
 }
 
@@ -220,7 +334,7 @@ function paintZ(canvas, x, y) {
     [1, 2],
     [2, 2],
   ];
-  for (const [dx, dy] of cells) canvas.set(x + dx, y + dy, PALETTE.tip);
+  for (const [dx, dy] of cells) canvas.set(x + dx, y + dy, canvas.palette.tip);
 }
 
 /**
@@ -234,16 +348,19 @@ function paintZ(canvas, x, y) {
  * @property {number} flameLean
  * @property {[number, number]} [feet]
  * @property {[number, number]} [zAt]
+ * @property {boolean} [armsUp]
  */
 
 /** @param {WispSpec} spec */
 function drawWisp(spec) {
   const canvas = new Canvas(FRAME, FRAME);
-  const { cx, cy, rx, ry, eyes, flameHeight, flameLean, feet, zAt } = spec;
+  const { cx, cy, rx, ry, eyes, flameHeight, flameLean, feet, zAt, armsUp } = spec;
   paintFlame(canvas, cx + 1, cy - ry, flameHeight, flameLean);
   paintBlob(canvas, cx, cy, rx, ry);
   paintEyes(canvas, cx, cy - 1, eyes);
+  if (eyes === 'happy') paintMouth(canvas, cx, cy + 2, 'smile');
   if (feet) paintFeet(canvas, cx, cy + ry, feet[0], feet[1]);
+  if (armsUp) paintArmsUp(canvas, cx, cy, rx);
   if (zAt) paintZ(canvas, zAt[0], zAt[1]);
   return canvas;
 }
@@ -275,11 +392,32 @@ const FRAMES = {
     { ...base, cy: 18, rx: 7, ry: 10, eyes: 'wide', flameHeight: 7, flameLean: 0, feet: [0, 0] },
     { ...base, cy: 17, rx: 7, ry: 10, eyes: 'wide', flameHeight: 8, flameLean: 1, feet: [0, 0] },
   ],
+  // rx 7 keeps the expression overlay's eye patch inside the outline.
   drag: [
-    { ...base, cy: 17, rx: 6, ry: 11, flameHeight: 5, flameLean: 3, feet: [-1, 1] },
-    { ...base, cx: 16, cy: 17, rx: 6, ry: 11, flameHeight: 5, flameLean: 4, feet: [1, -1] },
+    { ...base, cy: 17, rx: 7, ry: 11, flameHeight: 5, flameLean: 3, feet: [-1, 1] },
+    { ...base, cx: 16, cy: 17, rx: 7, ry: 11, flameHeight: 5, flameLean: 4, feet: [1, -1] },
+  ],
+  celebrate: [
+    { ...base, cy: 23, rx: 9, ry: 6, eyes: 'happy', flameHeight: 4, flameLean: 2, feet: [-1, 1] },
+    { ...base, cy: 15, rx: 7, ry: 8, eyes: 'happy', flameHeight: 4, flameLean: 0, armsUp: true },
+    { ...base, cy: 21, rx: 9, ry: 7, eyes: 'happy', flameHeight: 5, flameLean: 2, feet: [-2, 2] },
   ],
 };
+
+/**
+ * The overlay covers the eye box of any open-eyed pose (wide eyes included) with body colour,
+ * then draws the mood's eyes and mouth at the idle eye position.
+ * @param {Expression} expression
+ */
+function drawExpression(expression) {
+  const canvas = new Canvas(FRAME, FRAME);
+  const eyeY = base.cy - 1;
+  for (let y = eyeY - 1; y <= eyeY + 1; y++) {
+    for (let x = base.cx - 2; x <= base.cx + 5; x++) canvas.set(x, y, canvas.palette.body);
+  }
+  paintExpression(canvas, base.cx, eyeY, expression);
+  return canvas;
+}
 
 const CRC_TABLE = new Uint32Array(256);
 for (let n = 0; n < 256; n++) {
@@ -344,31 +482,63 @@ function encodePng(canvas) {
  */
 
 function buildSheet() {
-  const sheet = new Canvas(FRAME * COLUMNS, FRAME * POSES.length);
+  const rows = POSES.length + 1;
+  const sheet = new Canvas(FRAME * COLUMNS, FRAME * rows);
   /** @type {Record<string, AsepriteFrame>} */
   const frames = {};
   /** @type {{ name: string; from: number; to: number; direction: string }[]} */
   const frameTags = [];
+  /** @type {number[]} */
+  const offsetX = [];
+  /** @type {number[]} */
+  const offsetY = [];
   let index = 0;
+
+  /**
+   * @param {Canvas} canvas
+   * @param {number} column
+   * @param {number} row
+   * @param {number} duration
+   */
+  const place = (canvas, column, row, duration) => {
+    sheet.blit(canvas, column * FRAME, row * FRAME);
+    frames[`wisp ${index}.aseprite`] = {
+      frame: { x: column * FRAME, y: row * FRAME, w: FRAME, h: FRAME },
+      rotated: false,
+      trimmed: false,
+      spriteSourceSize: { x: 0, y: 0, w: FRAME, h: FRAME },
+      sourceSize: { w: FRAME, h: FRAME },
+      duration,
+    };
+    index++;
+  };
+
   POSES.forEach((pose, row) => {
     const from = index;
     const specs = FRAMES[pose.name] ?? [];
     for (let column = 0; column < pose.frames; column++) {
       const spec = specs[column];
       if (!spec) throw new Error(`Missing frame ${column} for pose ${pose.name}.`);
-      sheet.blit(drawWisp(spec), column * FRAME, row * FRAME);
-      frames[`wisp ${index}.aseprite`] = {
-        frame: { x: column * FRAME, y: row * FRAME, w: FRAME, h: FRAME },
-        rotated: false,
-        trimmed: false,
-        spriteSourceSize: { x: 0, y: 0, w: FRAME, h: FRAME },
-        sourceSize: { w: FRAME, h: FRAME },
-        duration: pose.duration,
-      };
-      index++;
+      offsetX.push(spec.cx - base.cx);
+      offsetY.push(spec.cy - base.cy);
+      place(drawWisp(spec), column, row, pose.duration);
     }
     frameTags.push({ name: pose.name, from, to: index - 1, direction: 'forward' });
   });
+
+  const expressionsFrom = index;
+  EXPRESSIONS.forEach((expression, column) => {
+    offsetX.push(0);
+    offsetY.push(0);
+    place(drawExpression(expression), column, POSES.length, 100);
+  });
+  frameTags.push({
+    name: 'expressions',
+    from: expressionsFrom,
+    to: index - 1,
+    direction: 'forward',
+  });
+
   const json = {
     frames,
     meta: {
@@ -379,16 +549,22 @@ function buildSheet() {
       size: { w: sheet.width, h: sheet.height },
       scale: '1',
       frameTags,
+      wisp: { bob: { offsetX, offsetY } },
     },
   };
   return { sheet, json };
 }
 
-function buildTray() {
-  const tray = new Canvas(22, 22);
+/**
+ * @param {Expression} expression
+ * @param {number} brightness
+ * @param {number} saturation
+ */
+function buildTray(expression, brightness, saturation) {
+  const tray = new Canvas(22, 22, tintPalette(brightness, saturation));
   paintFlame(tray, 12, 5, 4, 1);
   paintBlob(tray, 11, 13, 8, 8);
-  paintEyes(tray, 11, 12, 'open');
+  paintExpression(tray, 11, 12, expression);
   return tray;
 }
 
@@ -409,11 +585,21 @@ mkdirSync(iconsDir, { recursive: true });
 
 const { sheet, json } = buildSheet();
 writeFileSync(join(spritesDir, 'wisp.png'), encodePng(sheet));
-writeFileSync(join(spritesDir, 'wisp.json'), JSON.stringify(json, null, 2) + '\n');
+// Prettier keeps short number arrays on one line; match it so the generated file passes the check.
+const jsonText = JSON.stringify(json, null, 2).replace(
+  /\[\s*(-?\d+(?:,\s*-?\d+)*)\s*\]/g,
+  (_m, items) => `[${String(items).replace(/\s+/g, ' ')}]`,
+);
+writeFileSync(join(spritesDir, 'wisp.json'), jsonText + '\n');
 
-const tray = buildTray();
-writeFileSync(join(iconsDir, 'tray.png'), encodePng(tray));
-writeFileSync(join(iconsDir, 'tray@2x.png'), encodePng(upscale(tray, 2)));
+for (const { mood, expression, brightness, saturation } of MOODS) {
+  const tray = buildTray(expression, brightness, saturation);
+  const names = mood === 'calm' ? ['tray', 'tray-calm'] : [`tray-${mood}`];
+  for (const name of names) {
+    writeFileSync(join(iconsDir, `${name}.png`), encodePng(tray));
+    writeFileSync(join(iconsDir, `${name}@2x.png`), encodePng(upscale(tray, 2)));
+  }
+}
 const idle = FRAMES.idle?.[0];
 if (!idle) throw new Error('Missing idle frame.');
 writeFileSync(join(iconsDir, 'wisp-256.png'), encodePng(upscale(drawWisp(idle), 8)));

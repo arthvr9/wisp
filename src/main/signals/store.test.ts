@@ -135,3 +135,27 @@ describe('SignalStore on disk', () => {
     }
   });
 });
+
+describe('completed tasks', () => {
+  it('reports a task that went from open to closed once, and hides it from list', () => {
+    const store = new SignalStore(':memory:');
+    const open: Signal = {
+      id: 'clickup:z',
+      source: 'clickup',
+      kind: 'task-due',
+      title: 'Ship it',
+      dueAt: 1000,
+      url: 'https://x',
+      status: 'to do',
+      listName: 'L',
+    };
+    expect(store.replaceAll('clickup', [open], 1).added).toHaveLength(1);
+    const closed = { ...open, status: 'complete', closedAt: 900 };
+    const diff = store.replaceAll('clickup', [closed], 2);
+    expect(diff.completed.map((s) => s.id)).toEqual(['clickup:z']);
+    expect(diff.changed).toHaveLength(0);
+    expect(store.list()).toHaveLength(0);
+    expect(store.replaceAll('clickup', [closed], 3).completed).toHaveLength(0);
+    store.close();
+  });
+});

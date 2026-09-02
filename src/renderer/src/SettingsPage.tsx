@@ -4,11 +4,235 @@ import type { ChangeEvent, KeyboardEvent } from 'react';
 import iconUrl from '../../../resources/icons/wisp-256.png';
 import type { Config } from '../../shared/config';
 import { translator } from '../../shared/i18n';
+import type { Translate } from '../../shared/i18n';
 import type { EnvironmentInfo } from '../../shared/ipc';
+import type { Mood } from '../../shared/mood';
 import type { SignalsStatus } from '../../shared/signals';
+import type { SpeechConfig, SpeechProviderKind, SpeechStatus } from '../../shared/speech';
 
 const SAVED_VISIBLE_MS = 1500;
 const NAME_MAX = 24;
+const PROVIDERS: readonly SpeechProviderKind[] = [
+  'off',
+  'ollama',
+  'openai-compatible',
+  'anthropic',
+];
+const BASE_URL_PLACEHOLDER: Partial<Record<SpeechProviderKind, string>> = {
+  'openai-compatible': 'https://integrate.api.nvidia.com/v1',
+  ollama: 'http://localhost:11434/v1',
+};
+
+interface SpeechTestResult {
+  text: string;
+  source: 'model' | 'fallback';
+  latencyMs: number;
+}
+
+interface VoiceSectionProps {
+  t: Translate;
+  speech: SpeechConfig;
+  status: SpeechStatus | null;
+  onSave: (patch: Partial<SpeechConfig>) => void;
+  onStatus: (status: SpeechStatus) => void;
+}
+
+function VoiceSection({ t, speech, status, onSave, onStatus }: VoiceSectionProps) {
+  const [baseUrlDraft, setBaseUrlDraft] = useState<string | null>(null);
+  const [modelDraft, setModelDraft] = useState<string | null>(null);
+  const [keyDraft, setKeyDraft] = useState('');
+  const [result, setResult] = useState<SpeechTestResult | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const provider = speech.provider;
+  const isCloud = provider === 'openai-compatible' || provider === 'anthropic';
+  const ollamaDetected = status?.ollamaDetected === true;
+  const ollamaModels = status?.ollamaModels ?? [];
+  const providers: readonly SpeechProviderKind[] = ollamaDetected
+    ? ['ollama', ...PROVIDERS.filter((p) => p !== 'ollama')]
+    : PROVIDERS;
+  const showModelSelect = provider === 'ollama' && ollamaModels.length > 0;
+
+  function commit(key: 'baseUrl' | 'model', value: string | null) {
+    if (key === 'baseUrl') setBaseUrlDraft(null);
+    else setModelDraft(null);
+    if (value === null) return;
+    const trimmed = value.trim();
+    if (trimmed !== speech[key]) onSave({ [key]: trimmed });
+  }
+
+  function saveKey() {
+    const key = keyDraft.trim();
+    if (key.length === 0) return;
+    setBusy(true);
+    void window.wisp
+      .setSpeechApiKey(key)
+      .then((next) => {
+        onStatus(next);
+        setKeyDraft('');
+      })
+      .finally(() => {
+        setBusy(false);
+      });
+  }
+
+  function test() {
+    setBusy(true);
+    setResult(null);
+    void window.wisp
+      .testSpeech()
+      .then(setResult)
+      .catch(() => {
+        setResult(null);
+      })
+      .finally(() => {
+        setBusy(false);
+      });
+  }
+
+  return (
+    <section className="field">
+      <label htmlFor="speechProvider">{t('settings.speech')}</label>
+      <p className="hint">{t('settings.speech.hint')}</p>
+      <select
+        id="speechProvider"
+        value={provider}
+        onChange={(e) => {
+          onSave({ provider: e.target.value as SpeechProviderKind });
+        }}
+      >
+        {providers.map((p) => (
+          <option key={p} value={p}>
+            {t(`settings.speech.provider.${p}`)}
+          </option>
+        ))}
+      </select>
+      {status && (
+        <p className="hint">
+          {t(ollamaDetected ? 'settings.speech.ollama.found' : 'settings.speech.ollama.missing')}
+        </p>
+      )}
+      {provider === 'ollama' && <p className="hint">{t('settings.speech.local')}</p>}
+      {isCloud && <p className="hint notice callout">{t('settings.speech.cloud')}</p>}
+
+      {(provider === 'ollama' || provider === 'openai-compatible') && (
+        <>
+          <label className="inline" htmlFor="speechBaseUrl">
+            {t('settings.speech.baseUrl')}
+          </label>
+          <input
+            id="speechBaseUrl"
+            type="text"
+            value={baseUrlDraft ?? speech.baseUrl}
+            placeholder={BASE_URL_PLACEHOLDER[provider]}
+            spellCheck={false}
+            autoComplete="off"
+            onChange={(e) => {
+              setBaseUrlDraft(e.target.value);
+            }}
+            onBlur={() => {
+              commit('baseUrl', baseUrlDraft);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur();
+            }}
+          />
+        </>
+      )}
+
+      {provider !== 'off' && (
+        <>
+          <label className="inline" htmlFor="speechModel">
+            {t('settings.speech.model')}
+          </label>
+          {showModelSelect ? (
+            <select
+              id="speechModel"
+              value={speech.model}
+              onChange={(e) => {
+                commit('model', e.target.value);
+              }}
+            >
+              {!ollamaModels.includes(speech.model) && <option value={speech.model} />}
+              {ollamaModels.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              id="speechModel"
+              type="text"
+              value={modelDraft ?? speech.model}
+              spellCheck={false}
+              autoComplete="off"
+              onChange={(e) => {
+                setModelDraft(e.target.value);
+              }}
+              onBlur={() => {
+                commit('model', modelDraft);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') e.currentTarget.blur();
+              }}
+            />
+          )}
+        </>
+      )}
+
+      {isCloud && (
+        <>
+          <label className="inline" htmlFor="speechApiKey">
+            {t('settings.speech.apiKey')}
+          </label>
+          <div className="keyRow">
+            <input
+              id="speechApiKey"
+              type="password"
+              value={keyDraft}
+              autoComplete="off"
+              onChange={(e) => {
+                setKeyDraft(e.target.value);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') saveKey();
+              }}
+            />
+            <button type="button" disabled={busy || keyDraft.trim().length === 0} onClick={saveKey}>
+              {t('settings.speech.apiKey.save')}
+            </button>
+          </div>
+          {status?.hasApiKey && <p className="hint">{t('settings.speech.apiKey.set')}</p>}
+        </>
+      )}
+
+      {provider !== 'off' && (
+        <>
+          <div className="actions">
+            <button type="button" disabled={busy} onClick={test}>
+              {t('settings.speech.test')}
+            </button>
+          </div>
+          {result && (
+            <p className="hint">
+              {t('settings.speech.result', {
+                source: result.source,
+                ms: result.latencyMs,
+                text: result.text,
+              })}
+            </p>
+          )}
+          {status?.lastError !== undefined && (
+            <p className="hint notice">
+              {t('settings.speech.error', { message: status.lastError })}
+            </p>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
 
 export function SettingsPage() {
   const [config, setConfig] = useState<Config | null>(null);
@@ -16,6 +240,8 @@ export function SettingsPage() {
   const [nameDraft, setNameDraft] = useState('');
   const [savedUntil, setSavedUntil] = useState<number | null>(null);
   const [signals, setSignals] = useState<SignalsStatus | null>(null);
+  const [speech, setSpeech] = useState<SpeechStatus | null>(null);
+  const [mood, setMood] = useState<Mood | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -32,14 +258,28 @@ export function SettingsPage() {
     void window.wisp.getSignalsStatus().then((s) => {
       if (alive) setSignals(s);
     });
+    void window.wisp.getSpeechStatus().then((s) => {
+      if (alive) setSpeech(s);
+    });
+    void window.wisp.getMood().then((m) => {
+      if (alive) setMood(m);
+    });
     const unsubscribe = window.wisp.onConfigChanged(applyConfig);
     const unsubscribeSignals = window.wisp.onSignalsStatusChanged((s) => {
       if (alive) setSignals(s);
+    });
+    const unsubscribeSpeech = window.wisp.onSpeechStatusChanged((s) => {
+      if (alive) setSpeech(s);
+    });
+    const unsubscribeMood = window.wisp.onMoodChanged((m) => {
+      if (alive) setMood(m);
     });
     return () => {
       alive = false;
       unsubscribe();
       unsubscribeSignals();
+      unsubscribeSpeech();
+      unsubscribeMood();
     };
   }, []);
 
@@ -128,6 +368,7 @@ export function SettingsPage() {
       <header className="header">
         <img className="icon" src={iconUrl} alt="" width={24} height={24} />
         <h1>{t('settings.title')}</h1>
+        {mood && <span className="mood">{t('settings.mood', { mood: t(`mood.${mood}`) })}</span>}
       </header>
 
       <main>
@@ -238,6 +479,16 @@ export function SettingsPage() {
             }}
           />
         </section>
+
+        <VoiceSection
+          t={t}
+          speech={config.speech}
+          status={speech}
+          onSave={(patch) => {
+            save({ speech: { ...config.speech, ...patch } });
+          }}
+          onStatus={setSpeech}
+        />
 
         <section className="field">
           <span className="label">{t('settings.nudges')}</span>

@@ -1,10 +1,22 @@
 import { app, safeStorage, shell } from 'electron';
 import { join } from 'node:path';
 
+import { flushCelebration, initialCelebration, noteCompleted } from './brain/celebrate';
+import type { CelebrationState } from './brain/celebrate';
+import {
+  initialMood,
+  moodBudget,
+  moodModifiers,
+  moodOf,
+  recordEvents,
+  stepMood,
+} from './brain/mood';
+import type { MoodState } from './brain/mood';
 import { decideNudges } from './brain/nudge';
 import type { NudgeDecision } from './brain/nudge';
 import { LoopbackOAuthProvider, McpHost, NeedsAuthorizationError, SecretStore } from './mcp';
 import { fetchClickUpSignals, Scheduler, SignalStore } from './signals';
+import type { Celebration, Mood, MoodEvent, MoodModifiers } from '../shared/mood';
 import type { Nudge, NudgeBudget, SilenceWindow } from '../shared/nudges';
 import type { ConnectionState, Signal, SignalsStatus, SilenceStatus } from '../shared/signals';
 
@@ -19,6 +31,8 @@ export interface ConnectorOptions {
   silenceStatus: (nowMs: number) => SilenceStatus;
   onStatus: (status: SignalsStatus) => void;
   onNudges: (nudges: Nudge[]) => void;
+  onMood: (mood: Mood) => void;
+  onCelebration: (celebration: Celebration) => void;
 }
 
 export class Connectors {
@@ -29,6 +43,9 @@ export class Connectors {
   private readonly scheduler: Scheduler;
   private clickup: ConnectionState = { state: 'disconnected' };
   private lastSyncAt: number | undefined;
+  private mood: MoodState = initialMood;
+  private celebration: CelebrationState = initialCelebration;
+  private lastQuietHourAt = 0;
 
   constructor(private readonly opts: ConnectorOptions) {
     const userData = app.getPath('userData');
@@ -107,19 +124,63 @@ export class Connectors {
 
   // Called from main every half minute: cache and history only, no network.
   decide(nowMs: number): NudgeDecision {
+    this.tickMood(nowMs);
     if (this.clickup.state !== 'connected') return { nudges: [], silenced: [], overBudget: [] };
-    return decideNudges({
+    const decision = decideNudges({
       signals: this.store.list('clickup'),
       nowMs,
       history: this.store.nudgeHistory(nowMs),
       silence: this.opts.silence(nowMs),
-      budget: this.opts.budget(),
+      budget: moodBudget(this.currentMood(), this.opts.budget()),
       dueSoonMs: this.opts.dueSoonMinutes() * 60_000,
     });
+    const freshOverdue = decision.nudges.filter((n) => n.kind === 'overdue' && n.repeat === 0);
+    if (freshOverdue.length > 0) {
+      this.pushMoodEvents(
+        freshOverdue.map(() => ({ kind: 'overdue-new', at: nowMs })),
+        nowMs,
+      );
+    }
+    return decision;
   }
 
   recordShown(nudge: Nudge, nowMs: number): void {
     this.store.recordNudge({ signalId: nudge.signalId, kind: nudge.kind, at: nowMs });
+    this.pushMoodEvents([{ kind: 'nudge-shown', at: nowMs }], nowMs);
+  }
+
+  currentMood(): Mood {
+    return moodOf(this.mood);
+  }
+
+  modifiers(): MoodModifiers {
+    return moodModifiers(this.currentMood());
+  }
+
+  private tickMood(nowMs: number): void {
+    // One quiet-hour event per hour without a fresh overdue keeps the ladder drifting up.
+    if (nowMs - this.lastQuietHourAt >= 60 * 60_000) {
+      this.lastQuietHourAt = nowMs;
+      if (!this.mood.events.some((e) => e.kind === 'overdue-new' && e.at > nowMs - 60 * 60_000)) {
+        this.mood = recordEvents(this.mood, [{ kind: 'quiet-hour', at: nowMs }]);
+      }
+    }
+    this.advanceMood(nowMs);
+    const flushed = flushCelebration(this.celebration, nowMs);
+    this.celebration = flushed.state;
+    if (flushed.celebration) this.opts.onCelebration(flushed.celebration);
+  }
+
+  private pushMoodEvents(events: MoodEvent[], nowMs: number): void {
+    this.mood = recordEvents(this.mood, events);
+    this.advanceMood(nowMs);
+  }
+
+  private advanceMood(nowMs: number): void {
+    const before = moodOf(this.mood);
+    this.mood = stepMood(this.mood, nowMs);
+    const after = moodOf(this.mood);
+    if (after !== before) this.opts.onMood(after);
   }
 
   close(): void {
@@ -136,9 +197,23 @@ export class Connectors {
         nowMs: now,
         horizonDays: HORIZON_DAYS,
       });
-      this.store.replaceAll('clickup', signals, now);
+      const diff = this.store.replaceAll('clickup', signals, now);
+      if (diff.completed.length > 0) {
+        this.celebration = noteCompleted(
+          this.celebration,
+          diff.completed.map((c) => ({ title: c.title, at: now })),
+        );
+        this.pushMoodEvents(
+          diff.completed.map((c) => ({
+            kind: (c.closedAt ?? now) > c.dueAt ? 'task-done-late' : 'task-done',
+            at: now,
+          })),
+          now,
+        );
+      }
       this.lastSyncAt = now;
-      this.clickup = { state: 'connected', lastSyncAt: now, signalCount: signals.length };
+      const openCount = signals.filter((sig) => sig.closedAt === undefined).length;
+      this.clickup = { state: 'connected', lastSyncAt: now, signalCount: openCount };
       this.publish();
       this.opts.onNudges(this.decide(now).nudges);
     } catch (err) {

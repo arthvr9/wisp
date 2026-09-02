@@ -77,6 +77,16 @@ transparent, non-focusable X11 window (through XWayland) that moves itself with 
   showed. New sources of silence produce `SilenceWindow[]`, nothing else.
 - The budget is a hard cap. Do not add a path around it, not even for urgent items.
 
+## Phase 4 shape
+
+- Mood lives in `src/main/brain/mood.ts` and only moves one step at a time. It may shrink the
+  nudge budget, never grow it past the cap.
+- Mood art is modifiers (expression overlay, speed, pause), never a second sprite sheet.
+- Speech is optional and always has a fixed-line fallback within two seconds. The bubble must
+  never wait on a model. Cloud providers get a visible privacy note next to the option.
+- The Anthropic adapter uses the official SDK. The OpenAI-compatible adapter is plain fetch and
+  exists for Ollama and NVIDIA, not as a way to call Anthropic.
+
 ## Phase 0 findings worth remembering
 
 - `focusable: false` makes Chromium create an override-redirect X window. Mutter does not

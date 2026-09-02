@@ -113,15 +113,17 @@ export async function fetchClickUpSignals(
         due_date_from: from,
         due_date_to: to,
         order_by: 'due_date',
-        include_closed: false,
+        include_closed: true,
         page,
       }),
     );
     for (const t of res.tasks) {
-      if (t.due_date === null || (t.date_closed !== null && t.date_closed !== undefined)) continue;
+      if (t.due_date === null) continue;
       const dueAt = Number(t.due_date);
       if (!Number.isFinite(dueAt)) continue;
+      const closedAt = t.date_closed == null ? undefined : Number(t.date_closed);
       signals.push({
+        ...(closedAt !== undefined && Number.isFinite(closedAt) ? { closedAt } : {}),
         id: `clickup:${t.id}`,
         source: 'clickup',
         kind: 'task-due',

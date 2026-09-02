@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
+import type { MoodModifiers } from '../../shared/mood';
 import {
   ALERT_MS,
+  CELEBRATE_MS,
   DEFAULT_IDLE_MS,
   IDLE_MS,
+  SIT_MS,
   SLEEP_AFTER_MS,
   WALK_MS,
   WALK_SPEED_PX_S,
@@ -38,8 +41,9 @@ function tick(
   rng: Rng = fixed(0),
   cursor: Cursor = still,
   follow = false,
+  mood?: MoodModifiers,
 ): ActorState {
-  const action: ActorAction = { type: 'tick', dtMs, rng, cursor, followCursor: follow };
+  const action: ActorAction = { type: 'tick', dtMs, rng, cursor, followCursor: follow, mood };
   return reduce(state, action, target);
 }
 
@@ -51,9 +55,10 @@ function run(
   rng: Rng = fixed(0),
   cursor: Cursor = still,
   follow = false,
+  mood?: MoodModifiers,
 ): ActorState {
   let s = state;
-  for (let t = 0; t < totalMs; t += dtMs) s = tick(s, target, dtMs, rng, cursor, follow);
+  for (let t = 0; t < totalMs; t += dtMs) s = tick(s, target, dtMs, rng, cursor, follow, mood);
   return s;
 }
 
@@ -324,5 +329,102 @@ describe('alert with a custom duration', () => {
     expect(s.pose).toBe('alert');
     s = run(s, one, 300, 100);
     expect(s.pose).toBe('idle');
+  });
+});
+
+describe('celebrate', () => {
+  const asleep: Cursor = { displayId: 1, idleMs: SLEEP_AFTER_MS };
+
+  it('enters celebrate for the duration of its intensity and then idles', () => {
+    for (const intensity of [1, 2, 3] as const) {
+      let s = reduce(grounded(), { type: 'celebrate', intensity }, one);
+      expect(s.pose).toBe('celebrate');
+      expect(s.celebrateIntensity).toBe(intensity);
+      expect(s.poseUntilMs).toBe(CELEBRATE_MS[intensity]);
+      s = run(s, one, CELEBRATE_MS[intensity] - 100, 100, fixed(0.5));
+      expect(s.pose).toBe('celebrate');
+      s = tick(s, one, 100, fixed(0.5));
+      expect(s.pose).toBe('idle');
+      expect(s.celebrateIntensity).toBeUndefined();
+    }
+  });
+
+  it('interrupts sleep and does not fall back asleep mid-celebration', () => {
+    const sleeping: ActorState = { ...grounded(), pose: 'sleep', poseUntilMs: 0 };
+    let s = reduce(sleeping, { type: 'celebrate', intensity: 2 }, one);
+    expect(s.pose).toBe('celebrate');
+    s = run(s, one, CELEBRATE_MS[2] - 100, 100, fixed(0.5), asleep);
+    expect(s.pose).toBe('celebrate');
+  });
+
+  it('works while paused and still times out', () => {
+    let s = reduce(grounded(), { type: 'pause' }, one);
+    s = reduce(s, { type: 'celebrate', intensity: 1 }, one);
+    expect(s.pose).toBe('celebrate');
+    expect(s.paused).toBe(true);
+    s = run(s, one, CELEBRATE_MS[1], 100);
+    expect(s.pose).toBe('idle');
+    expect(s.paused).toBe(true);
+    expect(s.celebrateIntensity).toBeUndefined();
+    const x = s.x;
+    s = run(s, one, 10_000, 100);
+    expect(s.x).toBe(x);
+  });
+
+  it('is ignored in the air and while dragging', () => {
+    const falling = reduce(grounded(), { type: 'drag-end', x: 300, y: 100, displayId: 1 }, one);
+    expect(reduce(falling, { type: 'celebrate', intensity: 3 }, one)).toEqual(falling);
+    const dragging = reduce(grounded(), { type: 'drag-start' }, one);
+    expect(reduce(dragging, { type: 'celebrate', intensity: 3 }, one)).toEqual(dragging);
+  });
+
+  it('clears the intensity when another pose takes over', () => {
+    const s = reduce(grounded(), { type: 'celebrate', intensity: 2 }, one);
+    expect(reduce(s, { type: 'alert' }, one).celebrateIntensity).toBeUndefined();
+    expect(reduce(s, { type: 'drag-start' }, one).celebrateIntensity).toBeUndefined();
+  });
+});
+
+describe('mood modifiers on tick', () => {
+  const slow: MoodModifiers = { expression: 'low', speedFactor: 0.6, pauseFactor: 1.8 };
+  const quick: MoodModifiers = { expression: 'bright', speedFactor: 1.25, pauseFactor: 0.7 };
+
+  it('scales the walk cruise speed', () => {
+    const walking: ActorState = { ...grounded(), pose: 'walk', poseUntilMs: 9000 };
+    const s = run(walking, one, 3000, 50, fixed(0.5), still, false, slow);
+    expect(s.vx).toBeCloseTo(WALK_SPEED_PX_S * 0.6, 6);
+    const fast = run(walking, one, 3000, 50, fixed(0.5), still, false, quick);
+    expect(fast.vx).toBeCloseTo(WALK_SPEED_PX_S * 1.25, 6);
+  });
+
+  it('scales idle and sit durations when they are picked', () => {
+    const start = { ...grounded(), poseUntilMs: 1000 };
+    const sat = tick(start, one, 1000, fixed(0.7), still, false, slow);
+    expect(sat.pose).toBe('sit');
+    expect(sat.poseUntilMs).toBeCloseTo((SIT_MS[0] + 0.7 * (SIT_MS[1] - SIT_MS[0])) * 1.8, 6);
+    const idled = tick(start, one, 1000, fixed(0.95), still, false, quick);
+    expect(idled.pose).toBe('idle');
+    expect(idled.poseUntilMs).toBeCloseTo((IDLE_MS[0] + 0.95 * (IDLE_MS[1] - IDLE_MS[0])) * 0.7, 6);
+  });
+
+  it('leaves walk durations alone', () => {
+    const start = { ...grounded(), poseUntilMs: 1000 };
+    const s = tick(start, one, 1000, fixed(0.5), still, false, slow);
+    expect(s.pose).toBe('walk');
+    expect(s.poseUntilMs).toBeCloseTo((WALK_MS[0] + WALK_MS[1]) / 2, 6);
+  });
+
+  it('behaves exactly as without a mood when given neutral factors', () => {
+    const neutral: MoodModifiers = { expression: 'plain', speedFactor: 1, pauseFactor: 1 };
+    const values = [0.1, 0.8, 0.3, 0.6, 0.95, 0.2];
+    let a = grounded();
+    let b = grounded();
+    const ra = sequence(values);
+    const rb = sequence(values);
+    for (let t = 0; t < 60_000; t += 33) {
+      a = tick(a, two, 33, ra);
+      b = tick(b, two, 33, rb, still, false, neutral);
+    }
+    expect(a).toEqual(b);
   });
 });

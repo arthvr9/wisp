@@ -12,6 +12,7 @@ export interface Signal {
   url: string;
   status: string;
   listName: string;
+  closedAt?: number;
 }
 
 export type ConnectionState =

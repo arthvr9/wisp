@@ -150,6 +150,7 @@ label,
 }
 
 input[type='text'],
+input[type='password'],
 input[type='number'],
 select {
   display: block;
@@ -167,11 +168,13 @@ select {
 }
 
 input[type='text']:hover:not(:focus),
+input[type='password']:hover:not(:focus),
 input[type='number']:hover:not(:focus) {
   border-color: #a8a8a8;
 }
 
 input[type='text']:focus,
+input[type='password']:focus,
 input[type='number']:focus,
 select:focus {
   outline: none;
@@ -311,6 +314,9 @@ input[type='number'] {
 .field:nth-child(8) {
   animation-delay: 210ms;
 }
+.field:nth-child(9) {
+  animation-delay: 240ms;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .page,
@@ -359,4 +365,30 @@ input[type='time'] {
 input[type='time']:disabled {
   color: var(--muted);
   background: var(--code-bg);
+}
+
+.header .mood {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.callout {
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-left: 2px solid var(--accent);
+  background: var(--code-bg);
+}
+
+.keyRow {
+  display: flex;
+  gap: 8px;
+}
+
+.keyRow input {
+  flex: 1;
+}
+
+.keyRow button {
+  flex: none;
 }
