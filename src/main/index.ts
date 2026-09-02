@@ -9,10 +9,13 @@ import type { ActorState } from './brain/actor';
 import { groundY } from './brain/movement';
 import type { DisplayArea, Target } from './brain/movement';
 import { ConfigStore } from './config';
+import { Connectors } from './connectors';
+import type { Announcement } from './brain/signals';
 import { describeEnvironment, formatEnvironment } from './harness/environment';
 import { Harness, formatSummary } from './harness/metrics';
 import { menuTemplate } from './menu';
 import { registerShortcut, SHORTCUT } from './shortcut';
+import { createBubble } from './stage/bubble';
 import { openSettings } from './stage/settings';
 import { createStage, MASCOT_SIZE } from './stage/window';
 import { createTray, detectTray } from './tray';
@@ -36,6 +39,7 @@ if (!process.argv.includes(OZONE_FLAG)) {
 
 const TICK_MS = 33;
 const SAMPLE_MS = 5000;
+const BUBBLE_MS = 12_000;
 
 function toArea(d: Display): DisplayArea {
   return { id: d.id, ...d.workArea };
@@ -63,6 +67,47 @@ void app.whenReady().then(async () => {
   const home = toArea(screen.getPrimaryDisplay());
   let actor: ActorState = createActor(home.id, home.x + 40, groundY(home, MASCOT_SIZE));
   const stage = createStage(Math.round(actor.x), Math.round(actor.y));
+  const bubble = createBubble();
+
+  let bubbleUntil = 0;
+  const queue: Announcement[] = [];
+  const announce = (list: Announcement[]) => {
+    for (const a of list) {
+      if (!queue.some((q) => q.signal.id === a.signal.id && q.kind === a.kind)) queue.push(a);
+    }
+  };
+  const showNext = (nowMs: number) => {
+    const next = queue.shift();
+    if (!next) return;
+    connectors.markAnnounced(next, nowMs);
+    const text =
+      next.kind === 'due-soon'
+        ? t('phrase.dueSoon', { minutes: next.minutesLeft, title: next.signal.title })
+        : next.kind === 'due-now'
+          ? t('phrase.dueNow', { title: next.signal.title })
+          : t('phrase.overdue', { title: next.signal.title });
+    bubble.show({ text, url: next.signal.url });
+    bubbleUntil = nowMs + BUBBLE_MS;
+    actor = reduce(actor, { type: 'alert', ms: BUBBLE_MS }, target);
+  };
+
+  const connectors = new Connectors({
+    pollMinutes: () => config.get().pollMinutes,
+    dueSoonMinutes: () => config.get().dueSoonMinutes,
+    onStatus: (status) => {
+      for (const w of BrowserWindow.getAllWindows())
+        w.webContents.send(IPC.signalsStatusChanged, status);
+    },
+    onAnnouncements: announce,
+  });
+  ipcMain.handle(IPC.clickupConnect, () => connectors.connect());
+  ipcMain.handle(IPC.clickupDisconnect, () => connectors.disconnect());
+  ipcMain.handle(IPC.clickupSyncNow, () => connectors.syncNow());
+  ipcMain.handle(IPC.signalsStatusGet, () => connectors.status());
+  ipcMain.handle(IPC.signalsList, () => connectors.signals());
+  app.on('before-quit', () => {
+    connectors.close();
+  });
 
   const refreshDisplays = () => {
     target = { ...target, displays: screen.getAllDisplays().map(toArea) };
@@ -198,6 +243,13 @@ void app.whenReady().then(async () => {
         );
       });
     });
+    at(4500, () => {
+      bubble.show({
+        text: t('phrase.dueSoon', { minutes: 30, title: 'Self-test task with a long name' }),
+      });
+      bubbleUntil = Date.now() + 4000;
+      actor = reduce(actor, { type: 'alert', ms: 4000 }, target);
+    });
     at(5000, () => {
       const w = openSettings(appPath);
       w.webContents.once('did-finish-load', () => {
@@ -208,9 +260,11 @@ void app.whenReady().then(async () => {
             void Promise.all([
               w.webContents.capturePage(),
               stage.win.webContents.capturePage(),
-            ]).then(([settingsShot, mascotShot]) => {
+              bubble.capture(),
+            ]).then(([settingsShot, mascotShot, bubbleShot]) => {
               writeFileSync(join(dir, 'settings.png'), settingsShot.toPNG());
               writeFileSync(join(dir, 'mascot.png'), mascotShot.toPNG());
+              writeFileSync(join(dir, 'bubble.png'), bubbleShot.toPNG());
               w.close();
             });
           } else {
@@ -253,6 +307,7 @@ void app.whenReady().then(async () => {
     if (process.env.WISP_OPEN_SETTINGS) openSettings(appPath);
 
     let last = performance.now();
+    let nextDueCheck = 0;
     setInterval(() => {
       const now = performance.now();
       const dt = now - last;
@@ -278,7 +333,23 @@ void app.whenReady().then(async () => {
       );
       if (!hidden) stage.moveTo(Math.round(actor.x), Math.round(actor.y));
       pushPose();
+
+      const nowMs = Date.now();
+      if (nowMs >= nextDueCheck) {
+        nextDueCheck = nowMs + 30_000;
+        announce(connectors.announcements(nowMs));
+      }
+      if (bubble.isVisible()) {
+        if (nowMs >= bubbleUntil || hidden) bubble.hide();
+        else {
+          const d = target.displays.find((x) => x.id === actor.displayId);
+          bubble.follow(actor.x, actor.y, d?.x ?? 0, (d?.x ?? 0) + (d?.width ?? 1920));
+        }
+      } else if (queue.length > 0 && !hidden && !actor.paused) {
+        showNext(nowMs);
+      }
     }, TICK_MS);
+    connectors.start();
   });
 
   if (harness) {

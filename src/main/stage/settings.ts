@@ -11,7 +11,7 @@ export function openSettings(appPath: string): BrowserWindow {
   }
   const win = new BrowserWindow({
     width: 420,
-    height: 600,
+    height: 720,
     resizable: false,
     minimizable: false,
     maximizable: false,
