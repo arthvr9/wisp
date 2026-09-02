@@ -163,3 +163,42 @@ select:disabled {
   color: var(--accent);
   font-size: 12px;
 }
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin: 6px 0 10px;
+}
+
+button {
+  font: inherit;
+  padding: 5px 12px;
+  border: 1px solid #b9b3c4;
+  background: #fff;
+  color: #2e1a47;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: #7c3aed;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button.primary {
+  background: #7c3aed;
+  border-color: #7c3aed;
+  color: #fff;
+}
+
+input[type='number'] {
+  width: 80px;
+}
+
+label.inline {
+  display: block;
+  margin-top: 6px;
+}

@@ -2,9 +2,11 @@
 
 A desktop mascot for GNOME on Wayland, in the spirit of Shimeji. Later phases will read tasks
 and meetings through MCP and nudge you about them. Phase 0 proved the window mechanics on
-the target environment and measured what they cost. Phase 1 makes the creature alive without
+the target environment and measured what they cost. Phase 1 made the creature alive without
 any external data: it walks, sits, sleeps and follows you between monitors, and you can pause,
-hide or quit it from a right-click menu, a global shortcut or the tray.
+hide or quit it from a right-click menu, a global shortcut or the tray. Phase 2 brings the
+first real signal: your open ClickUp tasks with a due date, read through the official ClickUp
+MCP server, shown in a speech bubble when they are about to be due.
 
 ## Target
 
@@ -59,6 +61,27 @@ while the pointer is over an X11 window. Wisp treats a position that did not cha
 last tick as unknown, so it never chases a stale point, but on a desktop with no other X11
 apps it only sees the pointer when it is over the mascot itself. The GNOME extension in Phase
 8 is the real fix.
+
+## ClickUp
+
+Settings has a ClickUp section with a Connect button. Connecting opens the browser on
+ClickUp's OAuth page; Wisp listens on a loopback port for the redirect, exchanges the code
+with PKCE and stores the tokens encrypted with Electron's safeStorage (the GNOME keyring) under
+`~/.config/wisp/secrets/`. The client registers itself dynamically, there is no app to create
+in ClickUp and no API key to paste. Only the `read` scope is requested by Wisp, though the
+server advertises `read write` and the SDK may ask for both. Nothing is ever written.
+
+Every few minutes (5 by default, exponential backoff with jitter on failures) Wisp asks the
+server for your open tasks due between seven days ago and two weeks ahead, validates the
+answer with Zod and stores the result in `~/.config/wisp/signals.sqlite` (the Node built-in
+`node:sqlite`, no native module). A task due within the warning window (30 minutes by
+default) makes the mascot stop, take the alert pose and show a bubble with the task name.
+Each task is announced once per kind: due soon, due now, overdue.
+
+The adapter discovers tool names at runtime by suffix (`filter_tasks`, `resolve_assignees`)
+because the official server's names were not verified against a live connection. The task
+shape it validates was observed through ClickUp's connector. The full OAuth round trip against
+`mcp.clickup.com` has not been exercised yet; the first Connect on a real machine is the test.
 
 ## Sprites
 
@@ -129,9 +152,12 @@ dragged with the mouse. Run the harness again after changes that touch the loop.
 
 ```
 src/main/index.ts            entry, loop, IPC, harness wiring
-src/main/brain/              pure: movement, follow hysteresis, actor reducer, tested
+src/main/brain/              pure: movement, follow hysteresis, actor reducer, due rules, tested
 src/main/stage/              the only place that calls setBounds, setShape, setAlwaysOnTop
 src/main/harness/            environment report, metrics, CSV, system sampler
+src/main/connectors.ts       ties MCP host, signal store, scheduler and announcements together
+src/main/mcp/                MCP client host, OAuth PKCE loopback provider, encrypted secrets
+src/main/signals/            SQLite cache with diff, scheduler with backoff, ClickUp adapter
 src/main/config.ts           JSON config store
 src/main/autostart.ts        .desktop file in ~/.config/autostart
 src/main/tray.ts             StatusNotifier detection and tray

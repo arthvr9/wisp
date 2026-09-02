@@ -314,3 +314,15 @@ describe('determinism', () => {
     expect(a).toEqual(b);
   });
 });
+
+describe('alert with a custom duration', () => {
+  it('stays alert for the requested time and then idles', () => {
+    let s = reduce(grounded(), { type: 'alert', ms: 8000 }, one);
+    expect(s.pose).toBe('alert');
+    expect(s.poseUntilMs).toBe(8000);
+    s = run(s, one, 7900, 100);
+    expect(s.pose).toBe('alert');
+    s = run(s, one, 300, 100);
+    expect(s.pose).toBe('idle');
+  });
+});

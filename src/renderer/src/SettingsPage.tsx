@@ -5,6 +5,7 @@ import iconUrl from '../../../resources/icons/wisp-256.png';
 import type { Config } from '../../shared/config';
 import { translator } from '../../shared/i18n';
 import type { EnvironmentInfo } from '../../shared/ipc';
+import type { SignalsStatus } from '../../shared/signals';
 
 const SAVED_VISIBLE_MS = 1500;
 const NAME_MAX = 24;
@@ -14,6 +15,8 @@ export function SettingsPage() {
   const [environment, setEnvironment] = useState<EnvironmentInfo | null>(null);
   const [nameDraft, setNameDraft] = useState('');
   const [savedUntil, setSavedUntil] = useState<number | null>(null);
+  const [signals, setSignals] = useState<SignalsStatus | null>(null);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -26,10 +29,17 @@ export function SettingsPage() {
     void window.wisp.getEnvironment().then((env) => {
       if (alive) setEnvironment(env);
     });
+    void window.wisp.getSignalsStatus().then((s) => {
+      if (alive) setSignals(s);
+    });
     const unsubscribe = window.wisp.onConfigChanged(applyConfig);
+    const unsubscribeSignals = window.wisp.onSignalsStatusChanged((s) => {
+      if (alive) setSignals(s);
+    });
     return () => {
       alive = false;
       unsubscribe();
+      unsubscribeSignals();
     };
   }, []);
 
@@ -75,9 +85,43 @@ export function SettingsPage() {
     };
   }
 
+  function clickup(action: 'connect' | 'disconnect' | 'sync') {
+    return () => {
+      setBusy(true);
+      const call =
+        action === 'connect'
+          ? window.wisp.clickupConnect()
+          : action === 'disconnect'
+            ? window.wisp.clickupDisconnect()
+            : window.wisp.clickupSyncNow();
+      void call.then(setSignals).finally(() => {
+        setBusy(false);
+      });
+    };
+  }
+
   if (!config) return <div className="page" />;
 
   const t = translator(config.locale, { name: config.name });
+  const clock = (ms: number) =>
+    new Date(ms).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+
+  function clickupStatusLine(status: SignalsStatus): string {
+    const c = status.clickup;
+    switch (c.state) {
+      case 'disconnected':
+        return t('settings.clickup.disconnected');
+      case 'authorizing':
+        return t('settings.clickup.authorizing');
+      case 'connected':
+        return (
+          t('settings.clickup.connected', { count: c.signalCount }) +
+          (c.lastSyncAt ? ' ' + t('settings.clickup.lastSync', { time: clock(c.lastSyncAt) }) : '')
+        );
+      case 'error':
+        return t('settings.clickup.error', { message: c.message });
+    }
+  }
 
   return (
     <div className="page">
@@ -143,6 +187,56 @@ export function SettingsPage() {
           {environment && !environment.shortcutRegistered && (
             <p className="hint notice">{t('settings.shortcut.unavailable')}</p>
           )}
+        </section>
+
+        <section className="field">
+          <span className="label">{t('settings.clickup')}</span>
+          <p className="hint">{t('settings.clickup.hint')}</p>
+          {signals && (
+            <p className={signals.clickup.state === 'error' ? 'hint notice' : 'hint'}>
+              {clickupStatusLine(signals)}
+              {signals.nextSyncAt && signals.clickup.state === 'connected'
+                ? ' ' + t('settings.clickup.nextSync', { time: clock(signals.nextSyncAt) })
+                : ''}
+            </p>
+          )}
+          <div className="actions">
+            {signals?.clickup.state === 'connected' || signals?.clickup.state === 'error' ? (
+              <>
+                <button type="button" disabled={busy} onClick={clickup('sync')}>
+                  {t('settings.clickup.syncNow')}
+                </button>
+                <button type="button" disabled={busy} onClick={clickup('disconnect')}>
+                  {t('settings.clickup.disconnect')}
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="primary"
+                disabled={busy || signals?.clickup.state === 'authorizing'}
+                onClick={clickup('connect')}
+              >
+                {t('settings.clickup.connect')}
+              </button>
+            )}
+          </div>
+          <label className="inline" htmlFor="dueSoon">
+            {t('settings.clickup.dueSoon')}
+          </label>
+          <input
+            id="dueSoon"
+            type="number"
+            min={1}
+            max={1440}
+            value={config.dueSoonMinutes}
+            onChange={(e) => {
+              const minutes = Number(e.target.value);
+              if (Number.isFinite(minutes) && minutes >= 1 && minutes <= 1440) {
+                save({ dueSoonMinutes: minutes });
+              }
+            }}
+          />
         </section>
 
         {environment && !environment.trayAvailable && (

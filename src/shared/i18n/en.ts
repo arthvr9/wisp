@@ -34,7 +34,7 @@ export const en = {
   'settings.clickup.lastSync': 'Last sync {time}.',
   'settings.clickup.nextSync': 'Next sync {time}.',
   'settings.clickup.error': 'Sync failed: {message}',
-  'settings.clickup.dueSoon': 'Warn {minutes} minutes before a due date.',
+  'settings.clickup.dueSoon': 'Minutes of warning before a due date',
   'phrase.hello': '{name} is here.',
   'phrase.dropped': 'That was a long way down.',
   'phrase.picked': 'Put {name} down, please.',

@@ -30,7 +30,7 @@ export type ActorAction =
   | { type: 'tick'; dtMs: number; rng: Rng; cursor: Cursor; followCursor: boolean }
   | { type: 'drag-start' }
   | { type: 'drag-end'; x: number; y: number; displayId: number }
-  | { type: 'alert' }
+  | { type: 'alert'; ms?: number }
   | { type: 'pause' }
   | { type: 'resume' }
   | { type: 'displays-changed' };
@@ -247,7 +247,7 @@ export function reduce(state: ActorState, action: ActorAction, target: Target): 
       return dragEnd(state, target, action);
     case 'alert':
       if (state.pose === 'drag' || !grounded(state, target)) return state;
-      return enter(state, 'alert', ALERT_MS);
+      return enter(state, 'alert', action.ms ?? ALERT_MS);
     case 'pause':
       return { ...state, paused: true };
     case 'resume':
