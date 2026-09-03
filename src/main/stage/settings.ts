@@ -1,9 +1,11 @@
 import { BrowserWindow, nativeImage } from 'electron';
 import { join } from 'node:path';
 
+import type { MascotName } from '../../shared/mascots';
+
 let current: BrowserWindow | undefined;
 
-export function openSettings(appPath: string): BrowserWindow {
+export function openSettings(appPath: string, mascot: MascotName = 'wisp'): BrowserWindow {
   if (current && !current.isDestroyed()) {
     current.show();
     current.focus();
@@ -18,7 +20,7 @@ export function openSettings(appPath: string): BrowserWindow {
     fullscreenable: false,
     autoHideMenuBar: true,
     title: 'Wisp settings',
-    icon: nativeImage.createFromPath(join(appPath, 'resources', 'icons', 'wisp-256.png')),
+    icon: nativeImage.createFromPath(join(appPath, 'resources', 'icons', mascot, 'icon-256.png')),
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

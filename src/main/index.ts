@@ -348,7 +348,7 @@ void app.whenReady().then(async () => {
       connectors.publishStatus();
     },
     openSettings() {
-      openSettings(appPath);
+      openSettings(appPath, config.get().mascot);
     },
     quit() {
       app.quit();
@@ -387,7 +387,7 @@ void app.whenReady().then(async () => {
     t = translator(c.locale, { name: c.name });
     tray?.setMascot(c.mascot);
     try {
-      setAutostart(c.autostart);
+      setAutostart(c.autostart, c.mascot);
     } catch (err) {
       console.error('autostart update failed', err);
     }
@@ -488,7 +488,7 @@ void app.whenReady().then(async () => {
       togglePanel();
     });
     at(5000, () => {
-      const w = openSettings(appPath);
+      const w = openSettings(appPath, config.get().mascot);
       w.webContents.once('did-finish-load', () => {
         console.log('self-test settings loaded');
         at(1500, () => {
