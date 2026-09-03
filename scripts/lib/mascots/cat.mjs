@@ -1,196 +1,209 @@
-// A chunky black and white mascot cat. The proportions are the ones that make a small animal
-// read as cute at 32 pixels: a head almost as tall as the torso, a compact rounded body with a
-// white chest, short thick legs with socks, and a tail that is five pixels thick where it
-// leaves the rump.
+// A chunky black cat, drawn against a reference sheet of a small black cat in the same style: a
+// wide rounded head sitting straight on the body with no neck, big solid triangle ears growing
+// out of the top of it, green eyes with a dark slit pupil, one pink nose as the only warm colour
+// on the face, a cream bib down the chest and a thin hooked tail.
 //
-// Conventions borrowed from small sprite practice: the head is a rounded block with the eyes low
-// in it and a light muzzle under them, the ears are matched triangles with a pink inside, the
-// sitting pose is a wedge with a heavy haunch, and the walk is contact, passing, contact,
-// passing with the body dropping on contact and lifting on the pass.
+// Two rules the reference is strict about and the art must not lose:
+//   - the tail leaves the top of the rump (or, sitting, lies along the ground) and never runs
+//     beside a leg. It is four pixels wide, five where it meets the body, and hooks at the tip.
+//     Anything thinner is all outline once the mask is painted and reads as a wire.
+//   - the body carries volume. The profile body is nine to eleven pixels deep on four pixel
+//     legs; a shallow body on thin legs reads as a stray, not as a cat.
+//   - the head sits on the shoulders. Every column the head occupies has body under it starting
+//     at or above the lowest head pixel of that column, so no row of background can appear
+//     between jaw and chest. One transparent row there is three screen pixels at 1:3 and it
+//     reads as a severed head, so the top line of a profile body runs flat under the whole
+//     head and only steps down behind it.
 //
-// Frames are pixel maps: `#` is fur, `l` a light patch, `s` a shaded one, `p` the pink of an ear
-// or a nose, `-` a crease inside the silhouette. Each layer (far legs behind the body, the body
-// with its tail and near legs, the head, whatever wraps in front) is one mask outlined in one
-// pass. The tail of a standing cat belongs to the body layer on purpose: sharing the rump
-// outline is what stops it from reading as a fifth limb.
+// Frames are pixel maps: `#` is fur, `l` a cream patch, `s` a shaded one, `p` pink, `-` a crease
+// inside the silhouette. Each layer (far legs behind the body, the body with its tail and near
+// legs, the head, whatever wraps in front) is one mask outlined in one pass, so the parts of a
+// layer share an outline instead of drawing a seam between them.
 //
 // There are no whiskers. Two or three grey pixels beside a dark head at this size read as dirt
-// on the screen, so the ears, the pink nose and the muzzle carry the cat instead.
+// on the screen, so the ears, the pink nose and the eyes carry the cat instead.
 import { Canvas, tintPalette } from '../canvas.mjs';
-import { paintEyes, paintMask, paintZ } from '../parts.mjs';
+import { paintMask, paintZ } from '../parts.mjs';
 import { FRAME } from '../sheet.mjs';
 
 /** @typedef {import('../mascot.mjs').Expression} Expression */
 /** @typedef {import('../mascot.mjs').FrameSpec} FrameSpec */
 /** @typedef {{ x: number; y: number; rows: string[] }} Art a pixel map placed at x, y */
+/** @typedef {'open' | 'wide' | 'half' | 'closed' | 'happy'} EyeStyle */
 
 /** @type {Record<string, import('../canvas.mjs').Rgba>} */
 const PALETTE = {
   outline: [16, 16, 22, 255],
   body: [58, 58, 70, 255],
   shade: [36, 36, 46, 255],
-  light: [234, 234, 240, 255],
+  light: [238, 226, 200, 255],
   pink: [226, 146, 158, 255],
   eye: [124, 220, 128, 255],
   white: [255, 255, 255, 255],
 };
 const TINT_SKIP = ['eye', 'white'];
 
-// The head is the same twelve by ten block in every pose, so the expression overlay lands on the
-// eyes wherever the head goes: the eyes sit at (x + 4, y + 5) of the block and the widest pair
-// fills columns 2 to 9 of rows 4 to 6, which are full width rows.
+// The head is the same twelve by nine block in every pose, so the expression overlay lands on
+// the eyes wherever the head goes. Its top row is full width because the ear bases sit on it:
+// a narrower row leaves one pixel of background showing at the base of each ear.
 const HEAD = [
-  '..########..',
+  '.##########.',
   '.##########.',
   '############',
   '############',
   '############',
   '############',
   '############',
-  '.##########.',
   '.##########.',
   '..########..',
 ];
-const EYE_DX = 4;
-const EYE_DY = 5;
 
+// Eye geometry inside that block: two eyes three pixels wide with two pixels of fur between
+// them, growing upward from one fixed bottom row so every expression shares a baseline. The
+// widest of them starts at row 1, which is what the overlay has to clear.
+const EYE_LEFT_DX = 2;
+const EYE_RIGHT_DX = 7;
+const EYE_BOTTOM_DY = 5;
+const EYE_TOP_DY = 1;
+
+// Four rows tall, four wide at the base, two of head between them, tips leaning outward. The
+// mask makes them solid dark, which is what the reference does: no inner pink. A one pixel tip
+// on a four row triangle reads as a horn at this size, so the tip is two wide and blunt.
 /** @type {Record<string, string[]>} */
 const EARS = {
-  up: ['.###....###.', '.#pp#..#pp#.', '.#pp#..#pp#.'],
-  relaxed: ['.###....###.', '.#pp#..#pp#.'],
-  flat: ['.####..####.'],
+  up: ['.##......##.', '.###....###.', '.####..####.', '.####..####.'],
+  relaxed: ['.##......##.', '.###....###.', '.####..####.'],
+  flat: ['.###....###.', '.####..####.'],
 };
 
 const GROUND = 28;
 
-// Standing. Twenty two wide and eleven tall, with the back running level out of the tail and up
-// into the head, so the head sits on a shoulder rather than on a plank.
+// Profile standing body: eighteen long and twelve deep. Half again as long as it is deep, which
+// is a compact cat; at twenty two it read as a dachshund. The
+// top line is flat across every column the head covers and steps down only behind it, which is
+// what buries the jaw in the shoulder. The head is drawn over it, so those rows are mostly
+// never seen; what they buy is a silhouette with no seam.
 const STAND_BODY = [
-  '.....############.....',
-  '...##################.',
-  '..###################.',
-  '.####################.',
-  '######################',
-  '######################',
-  '######################',
-  '######################',
-  '.####################.',
-  '..##################..',
-  '...################...',
+  '......############',
+  '....##############',
+  '..################',
+  '.#################',
+  '##################',
+  '##################',
+  '##################',
+  '##################',
+  '##################',
+  '##################',
+  '.#################',
+  '..###############.',
 ];
-const STAND_BODY_AT = { x: 4, y: 14 };
+const STAND_BODY_AT = { x: 9, y: 13 };
 
-// One shaded row along the underside, so a body eleven pixels tall reads as round, not flat.
-const STAND_SHADE = ['ssssssssssssssss'];
-const STAND_SHADE_AT = { x: 7, y: 23 };
+// A narrow wedge of cream under the chin, widening a little down the chest, and one row along
+// the bottom of the belly. Together about a seventh of the visible body: a broad band across the
+// flank reads as a saddle on a two colour cat, not as a black cat with a pale chest.
+const STAND_MARKS = ['..l', '.ll', '.ll', 'lll', 'lll', '.ll'];
+const STAND_MARKS_AT = { x: 23, y: 16 };
+const STAND_BELLY = ['..lllll..', '.lllllll.'];
+const STAND_BELLY_AT = { x: 14, y: 22 };
 
-// The white chest, low and forward, between the front legs and under the chin.
-const STAND_MARKS = ['.ll.', '.lll', '.lll', '.lll', '.lll', '.ll.', '.l..'];
-const STAND_MARKS_AT = { x: 21, y: 17 };
-
-// Three pixels at the hooked tip, five where it merges into the rump, and three rows of overlap
-// with the back so the base is unmistakably part of the animal.
+// The walking tail: out of the top of the rump, up and back, tip hooking forward. Four pixels
+// thick, five where it meets the body, and every row of it is above the line of the back.
 const TAIL_UP = [
-  '...####..',
-  '..###....',
-  '..###....',
-  '..###....',
-  '..###....',
-  '..####...',
-  '..####...',
-  '...####..',
-  '...#####.',
-  '....#####',
-  '....#####',
-  '.....####',
+  '...#####..',
+  '.#####....',
+  '.####.....',
+  '.####.....',
+  '..####....',
+  '..#####...',
+  '...#####..',
+  '...#####..',
+  '...#####..',
+  '...#####..',
 ];
-const TAIL_UP_AT = { x: 0, y: 4 };
+const TAIL_UP_AT = { x: 5, y: 10 };
 
-// The alert tail: up, but still tapered and still hooked at the tip, because a constant width
-// column reads as a plank rather than as an animal.
+// The alert tail: straight up, still thicker at the base and still hooked at the tip, because a
+// constant width column reads as a plank rather than as an animal.
 const TAIL_STRAIGHT = [
-  '...##..',
-  '..###..',
-  '.####..',
-  '.####..',
-  '.####..',
-  '.####..',
-  '.####..',
-  '.####..',
-  '.####..',
-  '#####..',
-  '#####..',
-  '#####..',
-  '#####..',
-  '.#####.',
-  '..#####',
+  '..####..',
+  '..####..',
+  '.#####..',
+  '.####...',
+  '.####...',
+  '.####...',
+  '.####...',
+  '.####...',
+  '.####...',
+  '.####...',
+  '.#####..',
+  '.#####..',
+  '.#####..',
+  '.#####..',
 ];
-const TAIL_STRAIGHT_AT = { x: 2, y: 2 };
+const TAIL_STRAIGHT_AT = { x: 7, y: 6 };
 
 // Sitting: a wedge with a vertical chest at the front and the back curving down to a heavy
 // rump, steep at the shoulder and flattening at the base, which is the shape a cat actually
 // makes. A straight forty five degree back reads as a doorstop.
 const SIT_BODY = [
-  '............#########.',
-  '..........###########.',
-  '........#############.',
-  '.......##############.',
-  '......###############.',
-  '.....################.',
-  '....#################.',
-  '...##################.',
-  '...##################.',
-  '..###################.',
-  '.####################.',
-  '.####################.',
-  '#####################.',
-  '#####################.',
-  '#####################.',
-  '.###################..',
+  '........########',
+  '......##########',
+  '.....###########',
+  '....############',
+  '...#############',
+  '..##############',
+  '..##############',
+  '.###############',
+  '.###############',
+  '.###############',
+  '################',
+  '################',
+  '################',
+  '################',
+  '.##############.',
+  '.##############.',
 ];
-const SIT_BODY_AT = { x: 6, y: 13 };
+const SIT_BODY_AT = { x: 11, y: 13 };
 
-// The chest bib, the crease that separates the front legs from the haunch, and the two paws
-// they stand on, which have to sit on the bottom two rows or they read as knees.
-const SIT_MARKS = [
-  '.....llll',
-  '....lllll',
-  '....lllll',
-  '....lllll',
-  '.....llll',
-  '.....llll',
-  '.....llll',
-  '..-..llll',
-  '..-..llll',
-  '..-..llll',
-  '..-..llll',
-  '..lll-lll',
-  '..lll-lll',
-];
-const SIT_MARKS_AT = { x: 17, y: 15 };
+// The bib: a wedge that starts under the chin and widens a little down the chest, plus the pale
+// front paw the cat sits on. Both touch the front of the animal; cream that starts in the middle
+// of the flank reads as a marking on a different cat.
+const SIT_MARKS = ['...l', '..ll', '..ll', '.lll', '.lll', 'llll', 'llll', '.lll', '..ll'];
+const SIT_MARKS_AT = { x: 23, y: 16 };
+const SIT_PAW = ['.lll'];
+const SIT_PAW_AT = { x: 23, y: 27 };
 
-// The tail comes around the near side as a comma: five pixels where it leaves the rump, then a
-// diagonal down to the ground rather than a right angle, then a sweep that lifts at the tip. It
-// stops well short of the front paws, so nothing about it can be read as a leg.
+// The crease that separates the front leg from the haunch behind it.
+const SIT_CREASE = ['-', '-', '-', '-', '-', '-', '-', '-'];
+const SIT_CREASE_AT = { x: 21, y: 21 };
+
+// A sitting cat lays its tail along the ground and curls the tip up. Down there it cannot be
+// confused with a leg (a sitting cat shows none), it widens the silhouette the way the sitting
+// poses in the reference do, and the flick has somewhere to go: the tip only.
 const TAIL_SIT = [
-  '..#####......',
-  '.#####.......',
-  '#####.....###',
-  '#####....####',
-  '######..#####',
-  '#############',
-  '.###########.',
+  '..####....',
+  '.#####....',
+  '.#####....',
+  '.####.....',
+  '.####.....',
+  '.#####....',
+  '..######..',
+  '..########',
+  '...#######',
 ];
 const TAIL_SIT_FLICK = [
-  '..#####...###',
-  '.#####...####',
-  '#####....####',
-  '#####....####',
-  '######..#####',
-  '#############',
-  '.###########.',
+  '...####...',
+  '..#####...',
+  '.#####....',
+  '.####.....',
+  '.####.....',
+  '.#####....',
+  '..######..',
+  '..########',
+  '...#######',
 ];
-const TAIL_SIT_AT = { x: 4, y: 22 };
+const TAIL_SIT_AT = { x: 6, y: 20 };
 
 // Asleep: a mound, higher at the rump, with the head down at the front. The tail is stretched
 // out behind with the tip hooked up, well clear of the mound, because a tail tucked into a
@@ -212,55 +225,56 @@ const CURL_BODY = [
 ];
 const CURL_BODY_AT = { x: 5, y: 16 };
 
+const CURL_MARKS = ['..lllllllll.', '...llllllll.'];
+const CURL_MARKS_AT = { x: 13, y: 26 };
+
 const TAIL_SLEEP = [
   '.###......',
-  '####......',
-  '####......',
-  '.#####....',
-  '..########',
-  '..########',
+  '.####.....',
+  '.####.....',
+  '..####....',
+  '..######..',
   '...######.',
+  '....#####.',
 ];
-const TAIL_SLEEP_AT = { x: 0, y: 21 };
+const TAIL_SLEEP_AT = { x: 0, y: 20 };
 
 // Held up by the scruff: a short hanging body with the legs dangling clear of it, rather than
 // legs drawn inside a long body where nothing of them shows.
 const HANG_BODY = [
-  '...########...',
   '.############.',
+  '##############',
+  '##############',
   '##############',
   '##############',
   '##############',
   '##############',
   '.############.',
   '..##########..',
-  '...########...',
 ];
-const HANG_BODY_AT = { x: 11, y: 13 };
+const HANG_BODY_AT = { x: 11, y: 11 };
 
-const HANG_MARKS = ['..llll..', '.llllll.', '.llllll.', '..llll..', '..llll..', '...ll...'];
-const HANG_MARKS_AT = { x: 14, y: 15 };
+const HANG_MARKS = ['.ll.', 'llll', 'llll', '.ll.'];
+const HANG_MARKS_AT = { x: 16, y: 13 };
 
-// It leaves the flank sideways before it drops, and it is four or five pixels thick all the way
-// down. A three pixel tail hanging beside a dangling leg is the one shape that must not happen.
+// It leaves the flank high, well above the dangling paws, and hooks at the tip. Nothing about a
+// tail that stops eight rows short of the ground can be read as a fifth leg.
 const TAIL_HANG = [
-  '........###',
-  '.....######',
-  '...#######.',
-  '..#####....',
-  '.#####.....',
-  '.####......',
-  '.####......',
-  '..####.....',
-  '..####.....',
-  '...###.....',
+  '......###',
+  '...######',
+  '..#####..',
+  '.####....',
+  '.####....',
+  '..####...',
+  '..####...',
+  '...####..',
 ];
-const TAIL_HANG_AT = { x: 3, y: 15 };
+const TAIL_HANG_AT = { x: 4, y: 14 };
 
 // Mid hop: a shorter, rounder body with the hind legs tucked and both front paws thrown up.
 const JUMP_BODY = [
-  '...########...',
   '.############.',
+  '##############',
   '##############',
   '##############',
   '##############',
@@ -269,26 +283,43 @@ const JUMP_BODY = [
   '..##########..',
   '...########...',
 ];
-const JUMP_BODY_AT = { x: 9, y: 15 };
+const JUMP_BODY_AT = { x: 9, y: 13 };
 
-const JUMP_MARKS = ['..llll..', '.llllll.', '.llllll.', '..llll..'];
-const JUMP_MARKS_AT = { x: 12, y: 17 };
+const JUMP_MARKS = ['.ll.', 'llll', 'llll', '.ll.'];
+const JUMP_MARKS_AT = { x: 14, y: 16 };
 
 const TAIL_JUMP = [
-  '.###......',
-  '###.......',
-  '###.......',
+  '..####....',
   '.####.....',
+  '.####.....',
+  '..####....',
   '..#####...',
-  '....######',
+  '...#######',
 ];
-const TAIL_JUMP_AT = { x: 2, y: 15 };
+const TAIL_JUMP_AT = { x: 2, y: 14 };
 
-// Both front legs thrown up and out, one either side of the head, paws on top.
-const ARM_LEFT = ['#ll#.', '####.', '.###.', '..###'];
-const ARM_LEFT_AT = { x: 5, y: 10 };
-const ARM_RIGHT = ['.#ll#', '.####', '.###.', '###..'];
-const ARM_RIGHT_AT = { x: 22, y: 10 };
+// Both front legs thrown up and out, one either side of the head, paws on top. They run all the
+// way down into the shoulder: an arm that stops short of the body floats beside it.
+const ARM_LEFT = [
+  '#ll#....',
+  '####....',
+  '.####...',
+  '..####..',
+  '...####.',
+  '....####',
+  '.....###',
+];
+const ARM_LEFT_AT = { x: 4, y: 10 };
+const ARM_RIGHT = [
+  '....#ll#',
+  '....####',
+  '...####.',
+  '..####..',
+  '.####...',
+  '####....',
+  '###.....',
+];
+const ARM_RIGHT_AT = { x: 20, y: 10 };
 
 /**
  * @param {Art} art
@@ -353,8 +384,8 @@ function paintParts(canvas, parts) {
 }
 
 /**
- * A leg. Near legs are four pixels wide and get a white sock one row above the paw, far legs are
- * three and stay dark, which is the cheapest way to say which pair is closer.
+ * A leg. Near legs are four pixels wide and end in a two pixel pale paw, far legs are three and
+ * stay dark all the way down, which is the cheapest way to say which pair is closer.
  * @param {number} x
  * @param {number} top
  * @param {number} bottom paw row
@@ -366,7 +397,7 @@ function legArt(x, top, bottom, kind) {
   /** @type {string[]} */
   const rows = [];
   for (let y = top; y <= bottom; y++) rows.push(near ? '####' : '#s#');
-  if (near && rows.length >= 2) rows[rows.length - 2] = '#ll#';
+  if (near) rows[rows.length - 1] = '#ll#';
   return { x, y: top, rows };
 }
 
@@ -386,29 +417,66 @@ function headParts(hx, hy, ears) {
 }
 
 /**
- * A pink nose with a four pixel light muzzle under it. The eyes are painted by the caller, since
- * the expression overlay repaints them from a frame of its own.
+ * Two green eyes with a dark slit pupil. Every open style grows upward from `bottom` and keeps a
+ * row of green above and below the pupil, so the pupil never touches the edge of the eye: that
+ * one dark column is the difference between a bead and an animal looking at you.
+ * @param {Canvas} canvas
+ * @param {number} leftX
+ * @param {number} rightX
+ * @param {number} bottom
+ * @param {EyeStyle} style
+ */
+function paintCatEyes(canvas, leftX, rightX, bottom, style) {
+  const { palette } = canvas;
+  for (const x of [leftX, rightX]) {
+    if (style === 'closed') {
+      for (let dx = 0; dx < 3; dx++) canvas.set(x + dx, bottom - 1, palette.light);
+      continue;
+    }
+    if (style === 'happy') {
+      canvas.set(x, bottom - 1, palette.eye);
+      canvas.set(x + 1, bottom - 2, palette.eye);
+      canvas.set(x + 2, bottom - 1, palette.eye);
+      continue;
+    }
+    const top = style === 'wide' ? bottom - 4 : style === 'half' ? bottom - 2 : bottom - 3;
+    for (let y = top; y <= bottom; y++) {
+      for (let dx = 0; dx < 3; dx++) canvas.set(x + dx, y, palette.eye);
+    }
+    const pupilBottom = style === 'wide' ? bottom - 1 : style === 'half' ? top + 1 : top + 2;
+    for (let y = top + 1; y <= pupilBottom; y++) canvas.set(x + 1, y, palette.outline);
+    if (style === 'wide') canvas.set(x, top, palette.white);
+  }
+}
+
+/**
+ * The pink nose, and the small open mouth under it that the loud poses use. It is the only warm
+ * colour on the face. The eyes are painted by the caller, since the expression overlay repaints
+ * them from a frame of its own.
  * @param {Canvas} canvas
  * @param {number} hx
  * @param {number} hy
+ * @param {boolean} mouth
  */
-function paintFace(canvas, hx, hy) {
+function paintFace(canvas, hx, hy, mouth) {
   const { palette } = canvas;
-  for (let dx = 4; dx <= 7; dx++) canvas.set(hx + dx, hy + 8, palette.light);
+  canvas.set(hx + 5, hy + 6, palette.pink);
+  canvas.set(hx + 6, hy + 6, palette.pink);
+  if (!mouth) return;
   canvas.set(hx + 5, hy + 7, palette.pink);
   canvas.set(hx + 6, hy + 7, palette.pink);
 }
 
 /**
  * @param {Canvas} canvas
- * @param {number} cx
- * @param {number} cy
+ * @param {number} leftX
+ * @param {number} rightX
+ * @param {number} bottom
  * @param {Expression} expression
  */
-function paintExpression(canvas, cx, cy, expression) {
-  const { palette } = canvas;
+function paintExpression(canvas, leftX, rightX, bottom, expression) {
   const style = expression === 'bright' ? 'wide' : expression === 'low' ? 'half' : 'open';
-  paintEyes(canvas, cx, cy, style, palette.eye, palette.white);
+  paintCatEyes(canvas, leftX, rightX, bottom, style);
 }
 
 /**
@@ -419,10 +487,12 @@ function paintExpression(canvas, cx, cy, expression) {
  *   headDx?: number,
  *   headDy?: number,
  *   ears?: 'up' | 'relaxed' | 'flat',
- *   eyes?: 'open' | 'wide' | 'half' | 'closed' | 'happy',
+ *   eyes?: EyeStyle,
+ *   mouth?: boolean,
  *   step?: number,
  *   tailUp?: boolean,
  *   tailFlick?: boolean,
+ *   tailDx?: number,
  *   tailDy?: number,
  *   zAt?: [number, number],
  * }} CatSpec
@@ -431,8 +501,8 @@ function paintExpression(canvas, cx, cy, expression) {
 /** @type {Record<string, [number, number]>} */
 const HEAD_AT = {
   sit: [16, 5],
-  stand: [18, 7],
-  curl: [15, 18],
+  stand: [15, 8],
+  curl: [15, 19],
   hang: [12, 4],
   jump: [10, 6],
 };
@@ -449,15 +519,19 @@ function headOrigin(spec) {
 
 // Contact, passing, contact, passing. The near front and near hind swing against each other,
 // which is the diagonal a cat actually walks; the far pair stays planted and only lifts a pixel
-// on the passing frames, because four legs crossing on a twenty two pixel body turns into one
-// blob. The last entry is not part of the cycle: it is the stance the alert pose stands in.
-/** @type {{ hind: number; front: number; lift: number }[]} */
+// on the passing frames, because four legs crossing on a twenty pixel body turns into one blob.
+// The swings are biased forward rather than centred on the stance: a near leg that steps back
+// past its own far leg merges with it into one seven pixel post.
+// The two passing frames differ by which near paw is off the ground (`hindLift`, `frontLift`):
+// without that they are the same drawing twice and the walk turns into a shuffle. The last entry
+// is not part of the cycle: it is the stance the alert pose stands in.
+/** @type {{ hind: number; front: number; lift: number; hindLift: number; frontLift: number }[]} */
 const LEG_STEPS = [
-  { hind: 2, front: -2, lift: 0 },
-  { hind: 0, front: 0, lift: 1 },
-  { hind: -2, front: 2, lift: 0 },
-  { hind: 0, front: 0, lift: 1 },
-  { hind: 0, front: 1, lift: 0 },
+  { hind: 2, front: -1, lift: 0, hindLift: 0, frontLift: 0 },
+  { hind: 1, front: 0, lift: 1, hindLift: 3, frontLift: 0 },
+  { hind: 0, front: 1, lift: 0, hindLift: 0, frontLift: 0 },
+  { hind: 1, front: 0, lift: 1, hindLift: 0, frontLift: 3 },
+  { hind: 0, front: 0, lift: 0, hindLift: 0, frontLift: 0 },
 ];
 
 /**
@@ -471,7 +545,7 @@ const LEG_STEPS = [
 function standLayers(spec) {
   const step = LEG_STEPS[spec.step ?? 1];
   if (!step) throw new Error(`Unknown leg step ${String(spec.step)}.`);
-  const top = 21;
+  const top = 20;
   // The whole frame is moved by dy later, so the legs grow by that much instead: a body that
   // lifts a pixel must not take its planted paws with it.
   const dy = spec.dy ?? 0;
@@ -481,13 +555,13 @@ function standLayers(spec) {
     ? { ...TAIL_STRAIGHT_AT, rows: TAIL_STRAIGHT }
     : { ...TAIL_UP_AT, rows: TAIL_UP };
   return {
-    behind: [legArt(15, top, far, 'far'), legArt(4, top, far, 'far')],
+    behind: [legArt(18, top, far, 'far'), legArt(10, top, far, 'far')],
     body: [
       { ...STAND_BODY_AT, rows: STAND_BODY },
-      { ...STAND_SHADE_AT, rows: STAND_SHADE },
-      shift(tail, 0, spec.tailDy ?? 0),
-      legArt(19 + step.front, top, near, 'near'),
-      legArt(8 + step.hind, top, near, 'near'),
+      shift(tail, spec.tailDx ?? 0, spec.tailDy ?? 0),
+      legArt(22 + step.front, top, near - step.frontLift, 'near'),
+      legArt(13 + step.hind, top, near - step.hindLift, 'near'),
+      { ...STAND_BELLY_AT, rows: STAND_BELLY },
       { ...STAND_MARKS_AT, rows: STAND_MARKS },
     ],
     front: [],
@@ -501,12 +575,12 @@ function standLayers(spec) {
 function hangLayers(spec) {
   const swing = spec.step ?? 0;
   return {
-    behind: [legArt(13 - swing, 17, 24, 'far')],
+    behind: [legArt(13 - swing, 16, 24, 'far')],
     body: [
       { ...HANG_BODY_AT, rows: HANG_BODY },
-      { ...TAIL_HANG_AT, rows: TAIL_HANG },
-      legArt(15 + swing, 17, 26, 'near'),
-      legArt(20 + swing, 17, 25, 'near'),
+      shift({ ...TAIL_HANG_AT, rows: TAIL_HANG }, spec.tailDx ?? 0, 0),
+      legArt(15 + swing, 16, 26, 'near'),
+      legArt(20 + swing, 16, 25, 'near'),
       { ...HANG_MARKS_AT, rows: HANG_MARKS },
     ],
     front: [],
@@ -523,8 +597,8 @@ function jumpLayers(spec) {
     behind: [{ ...TAIL_JUMP_AT, rows: TAIL_JUMP }],
     body: [
       { ...JUMP_BODY_AT, rows: JUMP_BODY },
-      legArt(11, 20, 26, 'far'),
-      legArt(17, 20, 26, 'near'),
+      legArt(12, 19, 26, 'far'),
+      legArt(16, 19, 26, 'near'),
       { ...JUMP_MARKS_AT, rows: JUMP_MARKS },
     ],
     front: [
@@ -544,17 +618,24 @@ function poseLayers(spec) {
     return {
       behind: [],
       body: [
+        shift(tail, spec.tailDx ?? 0, spec.tailDy ?? 0),
         { ...SIT_BODY_AT, rows: SIT_BODY },
+        { ...SIT_CREASE_AT, rows: SIT_CREASE },
         { ...SIT_MARKS_AT, rows: SIT_MARKS },
+        { ...SIT_PAW_AT, rows: SIT_PAW },
       ],
-      front: [shift(tail, 0, spec.tailDy ?? 0)],
+      front: [],
     };
   }
   if (spec.kind === 'curl') {
     return {
       behind: [],
-      body: [{ ...CURL_BODY_AT, rows: CURL_BODY }],
-      front: [{ ...TAIL_SLEEP_AT, rows: TAIL_SLEEP }],
+      body: [
+        { ...TAIL_SLEEP_AT, rows: TAIL_SLEEP },
+        { ...CURL_BODY_AT, rows: CURL_BODY },
+        { ...CURL_MARKS_AT, rows: CURL_MARKS },
+      ],
+      front: [],
     };
   }
   if (spec.kind === 'stand') return standLayers(spec);
@@ -574,14 +655,13 @@ function draw(spec) {
   paintParts(canvas, moved(layers.behind));
   paintParts(canvas, moved(layers.body));
   paintParts(canvas, headParts(head.x, head.y, spec.ears ?? 'up'));
-  paintFace(canvas, head.x, head.y);
-  paintEyes(
+  paintFace(canvas, head.x, head.y, spec.mouth ?? false);
+  paintCatEyes(
     canvas,
-    head.x + EYE_DX,
-    head.y + EYE_DY,
+    head.x + EYE_LEFT_DX,
+    head.x + EYE_RIGHT_DX,
+    head.y + EYE_BOTTOM_DY,
     spec.eyes ?? 'open',
-    PALETTE.eye,
-    PALETTE.white,
   );
   paintParts(canvas, moved(layers.front));
   if (spec.zAt) paintZ(canvas, spec.zAt[0], spec.zAt[1], PALETTE.light);
@@ -598,56 +678,65 @@ function bob(spec) {
   return { ...spec, bobX: head.x - baseHead.x, bobY: head.y - baseHead.y };
 }
 
+// Idle breathes: the head settles a pixel, the ears drop with it, the lids come halfway down and
+// the tail tip flicks. Walk shifts weight, contact frames dropping the body and leaning the head
+// forward. Alert stands tall with the ears up and the tail straight.
 /** @type {Record<string, CatSpec[]>} */
 const FRAMES = {
-  idle: [bob({ kind: 'sit' }), bob({ kind: 'sit', headDy: 1, ears: 'relaxed', tailFlick: true })],
+  idle: [
+    bob({ kind: 'sit' }),
+    bob({ kind: 'sit', headDy: 1, ears: 'relaxed', eyes: 'half', tailFlick: true }),
+  ],
   walk: [
-    bob({ kind: 'stand', step: 0, dy: 1, headDx: 1 }),
+    bob({ kind: 'stand', step: 0, dy: 1, headDx: 1, tailDx: -1 }),
     bob({ kind: 'stand', step: 1, dy: -1, headDy: -1, tailDy: -1 }),
-    bob({ kind: 'stand', step: 2, dy: 1, headDx: 1 }),
-    bob({ kind: 'stand', step: 3, dy: -1, headDy: -1, tailDy: -1 }),
+    bob({ kind: 'stand', step: 2, dy: 1, headDx: 1, tailDx: 1 }),
+    bob({ kind: 'stand', step: 3, dy: -1, headDy: -1, tailDy: -1, tailDx: 1, ears: 'relaxed' }),
   ],
   sit: [
     bob({ kind: 'sit', headDy: 1, ears: 'relaxed' }),
-    bob({ kind: 'sit', headDy: 2, ears: 'relaxed', tailDy: -1 }),
+    bob({ kind: 'sit', headDy: 2, ears: 'relaxed', tailFlick: true }),
   ],
   sleep: [
-    bob({ kind: 'curl', eyes: 'closed', ears: 'relaxed', zAt: [27, 12] }),
-    bob({ kind: 'curl', eyes: 'closed', ears: 'relaxed', headDy: 1, zAt: [28, 9] }),
+    bob({ kind: 'curl', eyes: 'closed', ears: 'flat', zAt: [27, 12] }),
+    bob({ kind: 'curl', eyes: 'closed', ears: 'flat', headDy: 1, zAt: [28, 9] }),
   ],
   alert: [
     bob({ kind: 'stand', step: 4, tailUp: true }),
-    bob({ kind: 'stand', step: 4, headDy: -1, tailUp: true, tailDy: -1 }),
+    bob({ kind: 'stand', step: 4, headDy: -1, tailUp: true, tailDy: -1, tailDx: 1 }),
   ],
   drag: [
-    bob({ kind: 'hang', step: 0, ears: 'relaxed' }),
-    bob({ kind: 'hang', step: 1, dx: 1, ears: 'relaxed' }),
+    bob({ kind: 'hang', step: 0, ears: 'flat', mouth: true }),
+    bob({ kind: 'hang', step: 1, dx: 1, ears: 'flat', mouth: true, tailDx: 1 }),
   ],
   celebrate: [
-    bob({ kind: 'sit', dy: 1, eyes: 'happy' }),
-    bob({ kind: 'jump', dy: -3, step: 0, eyes: 'happy' }),
-    bob({ kind: 'jump', dy: -1, step: 1, eyes: 'happy' }),
+    bob({ kind: 'sit', dy: 1, eyes: 'wide', mouth: true }),
+    bob({ kind: 'jump', dy: -3, step: 0, eyes: 'wide', mouth: true }),
+    bob({ kind: 'jump', dy: -1, step: 1, eyes: 'wide', mouth: true }),
   ],
 };
 
 /**
+ * Clears the eye band of the idle head, then paints the mood's eyes on it. The band is the five
+ * rows the widest eye can reach, all of them inside the head, so the clear never shows a seam.
  * @param {Expression} expression
  */
 function drawExpression(expression) {
   const canvas = new Canvas(FRAME, FRAME, PALETTE);
-  const cx = baseHead.x + EYE_DX;
-  const cy = baseHead.y + EYE_DY;
-  for (let y = cy - 1; y <= cy + 1; y++) {
-    for (let x = cx - 2; x <= cx + 5; x++) canvas.set(x, y, PALETTE.body);
+  const leftX = baseHead.x + EYE_LEFT_DX;
+  const rightX = baseHead.x + EYE_RIGHT_DX;
+  const bottom = baseHead.y + EYE_BOTTOM_DY;
+  for (let y = baseHead.y + EYE_TOP_DY; y <= bottom; y++) {
+    for (let x = leftX; x <= rightX + 2; x++) canvas.set(x, y, PALETTE.body);
   }
-  paintExpression(canvas, cx, cy, expression);
+  paintExpression(canvas, leftX, rightX, bottom, expression);
   return canvas;
 }
 
 // The tray is a portrait, not the whole animal: at 22 pixels a sitting cat loses its legs and
 // its face at the same time, and the ears are what read at that size.
 const TRAY_HEAD = [
-  '..############..',
+  '.##############.',
   '.##############.',
   '################',
   '################',
@@ -660,9 +749,17 @@ const TRAY_HEAD = [
 ];
 /** @type {Record<string, string[]>} */
 const TRAY_EARS = {
-  up: ['..##........##..', '.#pp#......#pp#.', '.#ppp#....#ppp#.'],
-  flat: ['.####......####.', '.#ppp#....#ppp#.'],
+  up: [
+    '.##..........##.',
+    '.###........###.',
+    '.####......####.',
+    '.#####....#####.',
+    '.######..######.',
+  ],
+  flat: ['.####......####.', '.#####....#####.'],
 };
+const TRAY_EYE_LEFT_DX = 3;
+const TRAY_EYE_RIGHT_DX = 10;
 
 /**
  * @param {Expression} expression
@@ -680,9 +777,8 @@ function drawTray(expression, brightness, saturation) {
     { x, y, rows: TRAY_HEAD },
   ]);
   const { palette } = tray;
-  for (let dx = 5; dx <= 10; dx++) tray.set(x + dx, y + 7, palette.light);
-  for (let dx = 7; dx <= 8; dx++) tray.set(x + dx, y + 6, palette.pink);
-  paintExpression(tray, x + 5, y + 4, expression);
+  for (let dx = 7; dx <= 8; dx++) tray.set(x + dx, y + 7, palette.pink);
+  paintExpression(tray, x + TRAY_EYE_LEFT_DX, x + TRAY_EYE_RIGHT_DX, y + 5, expression);
   return tray;
 }
 
