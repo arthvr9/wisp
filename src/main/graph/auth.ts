@@ -15,7 +15,12 @@ export interface GraphAuthOptions {
   now?: () => number;
 }
 
-const TOKENS_KEY = 'outlook.tokens';
+// Scoped by client id and tenant on purpose. One fixed key would let tokens minted for one
+// app registration keep working after the user pastes another one, under the wrong account.
+function tokensKey(clientId: string, tenant: string): string {
+  const scope = `${clientId}.${tenant}`.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 80);
+  return `outlook.tokens.${scope}`;
+}
 const SCOPE = 'Calendars.Read offline_access';
 const CALLBACK_PATH = '/callback';
 const TIMEOUT_MS = 5 * 60_000;
@@ -98,6 +103,9 @@ function isInvalidGrant(raw: unknown): boolean {
   );
 }
 
+/** Thrown when Entra ID rejects the stored refresh token, so the user has to sign in again. */
+export class LostGrantError extends Error {}
+
 export class GraphAuth {
   private server?: Server;
   private pending?: PendingCallback;
@@ -111,7 +119,7 @@ export class GraphAuth {
   }
 
   signOut(): void {
-    this.opts.secrets.delete(TOKENS_KEY);
+    this.opts.secrets.delete(this.tokensKey);
   }
 
   // Concurrent calls share the one flow in progress so a second click never opens a second
@@ -136,6 +144,10 @@ export class GraphAuth {
     const now = this.opts.now?.() ?? Date.now();
     if (tokens.expiresAt - now > REFRESH_SKEW_MS) return tokens.accessToken;
     return this.refresh(tokens.refreshToken);
+  }
+
+  private get tokensKey(): string {
+    return tokensKey(this.opts.clientId, this.tenant);
   }
 
   private get tenant(): string {
@@ -278,7 +290,10 @@ export class GraphAuth {
     if (!res.ok) {
       // A refresh token that Entra ID has revoked cannot be retried; clearing it here is what
       // makes hasTokens() go false so the UI offers sign-in again instead of failing forever.
-      if (currentRefreshToken !== undefined && isInvalidGrant(raw)) this.signOut();
+      if (currentRefreshToken !== undefined && isInvalidGrant(raw)) {
+        this.signOut();
+        throw new LostGrantError(errorMessage(raw) ?? 'the sign-in was revoked');
+      }
       throw new Error(errorMessage(raw) ?? `sign-in failed with status ${res.status}`);
     }
     const parsed = TokenResponseSchema.safeParse(raw);
@@ -297,12 +312,12 @@ export class GraphAuth {
       refreshToken,
       expiresAt: now + json.expires_in * 1000,
     };
-    this.opts.secrets.set(TOKENS_KEY, tokens);
+    this.opts.secrets.set(this.tokensKey, tokens);
     return tokens;
   }
 
   private loadTokens(): StoredTokens | undefined {
-    return this.opts.secrets.get(TOKENS_KEY, (raw) => {
+    return this.opts.secrets.get(this.tokensKey, (raw) => {
       const parsed = TokensSchema.safeParse(raw);
       return parsed.success ? parsed.data : undefined;
     });

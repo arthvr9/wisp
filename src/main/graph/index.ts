@@ -1,4 +1,4 @@
-export { GraphAuth } from './auth';
+export { GraphAuth, LostGrantError } from './auth';
 export type { GraphAuthOptions } from './auth';
 export { graphClient, GraphError } from './client';
 export type { GraphClient } from './client';
