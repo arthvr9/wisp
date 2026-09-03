@@ -16,7 +16,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "sprites": "node scripts/make-placeholder-sprites.mjs"
+    "sprites": "node scripts/make-placeholder-sprites.mjs && node scripts/make-docs-images.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.123.0",
