@@ -220,3 +220,44 @@ describe('fetchGruplySignals', () => {
     expect(track.max).toBeGreaterThan(1);
   });
 });
+
+describe('a project that cannot be read', () => {
+  it('is skipped without losing the other projects', async () => {
+    const client: GruplyClient = {
+      get: <T>(path: string): Promise<T> => {
+        if (path === '/projects') {
+          return Promise.resolve({
+            data: [
+              { id: 'p1', name: 'Broken', status: 'active' },
+              { id: 'p2', name: 'Fine', status: 'active' },
+            ],
+            total: 2,
+            page: 1,
+            perPage: 100,
+            totalPages: 1,
+          } as T);
+        }
+        if (path === '/projects/p1/tasks') return Promise.reject(new Error('403 out of scope'));
+        return Promise.resolve({
+          data: [
+            {
+              id: 't1',
+              project_id: 'p2',
+              title: 'Survivor',
+              due_date: new Date(now + 60_000).toISOString(),
+              completed_at: null,
+              status: { id: 's', name: 'Doing', color: '#000', category: 'active' },
+              assignees: [{ user_id: 'u', name: 'A', email, avatar_url: null }],
+            },
+          ],
+          total: 1,
+          page: 1,
+          perPage: 100,
+          totalPages: 1,
+        } as T);
+      },
+    };
+    const signals = await fetchGruplySignals(client, { nowMs: now, email });
+    expect(signals.map((s) => s.title)).toEqual(['Survivor']);
+  });
+});

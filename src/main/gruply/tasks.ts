@@ -173,10 +173,18 @@ async function fetchProjectTaskSignals(
 ): Promise<Signal[]> {
   const signals: Signal[] = [];
   for (let page = 1; page <= MAX_PAGES; page += 1) {
-    const raw = await client.get<unknown>(`/projects/${String(project.id)}/tasks`, {
-      perPage: '100',
-      page: String(page),
-    });
+    let raw: unknown;
+    try {
+      raw = await client.get<unknown>(`/projects/${String(project.id)}/tasks`, {
+        perPage: '100',
+        page: String(page),
+      });
+    } catch {
+      // A project the key cannot read, or one request that times out, costs that project only.
+      // Throwing here would drop the tasks already collected from every other project.
+      onSkip();
+      break;
+    }
     const parsedPage = envelopeSchema.safeParse(raw);
     if (!parsedPage.success) {
       // One project with an unexpected shape should not sink the tasks already found in every

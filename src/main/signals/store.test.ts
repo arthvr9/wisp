@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -252,6 +253,48 @@ describe('meeting payload', () => {
     };
     store.replaceAll('outlook', [meeting], 1);
     expect(store.list('outlook')[0]?.meeting).toEqual(meeting.meeting);
+    store.close();
+  });
+});
+
+describe('migrating an older database', () => {
+  it('adds the columns a phase 2 schema never had', () => {
+    const file = join(mkdtempSync(join(tmpdir(), 'wisp-store-')), 'signals.sqlite');
+    const legacy = new DatabaseSync(file);
+    legacy.exec(`CREATE TABLE signals (
+      id TEXT PRIMARY KEY,
+      source TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      title TEXT NOT NULL,
+      due_at INTEGER NOT NULL,
+      url TEXT NOT NULL,
+      status TEXT NOT NULL,
+      list_name TEXT NOT NULL,
+      first_seen INTEGER NOT NULL,
+      last_seen INTEGER NOT NULL,
+      gone_at INTEGER NULL
+    )`);
+    legacy.exec(
+      `INSERT INTO signals VALUES ('clickup:old', 'clickup', 'task-due', 'Old one', 10,
+        'https://x', 'to do', 'List', 1, 1, NULL)`,
+    );
+    legacy.close();
+
+    const store = new SignalStore(file);
+    const meeting: Signal = {
+      id: 'outlook:new',
+      source: 'outlook',
+      kind: 'meeting',
+      title: 'Standup',
+      dueAt: 20,
+      url: 'https://outlook',
+      status: 'accepted',
+      listName: 'Calendar',
+      meeting: { endsAt: 30, accepted: true, allDay: false, organizer: 'a@b.c', busy: true },
+    };
+    expect(() => store.replaceAll('outlook', [meeting], 2)).not.toThrow();
+    expect(store.list('outlook')[0]?.meeting?.endsAt).toBe(30);
+    expect(store.list('clickup')).toHaveLength(1);
     store.close();
   });
 });

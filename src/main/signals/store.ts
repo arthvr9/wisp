@@ -138,6 +138,7 @@ function migrate(db: DatabaseSync): void {
     .map((r) => text(r.name));
   if (!columns.includes('closed_at'))
     db.exec('ALTER TABLE signals ADD COLUMN closed_at INTEGER NULL');
+  if (!columns.includes('meeting')) db.exec('ALTER TABLE signals ADD COLUMN meeting TEXT NULL');
 }
 
 export class SignalStore {

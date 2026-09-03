@@ -52,6 +52,19 @@ export const en = {
   'settings.outlook.silence.hint': 'A task due right now still gets through.',
   'settings.outlook.needsClientId': 'Enter a client ID before connecting.',
   'settings.outlook.connected': 'Connected. {count} meetings ahead.',
+  'settings.gruply': 'Gruply Teams',
+  'settings.gruply.hint':
+    'Reads the tasks assigned to you across the active projects. Read only, nothing is written.',
+  'settings.gruply.email': 'Your email in Gruply',
+  'settings.gruply.email.hint': 'Used to pick your tasks out of each project.',
+  'settings.gruply.key': 'API key',
+  'settings.gruply.key.hint':
+    'A company wide key from the Gruply app settings. It is stored with the system keyring, never in the config file.',
+  'settings.gruply.key.set': 'A key is stored.',
+  'settings.gruply.key.fromEnv':
+    'Using the key from the environment. A key saved here replaces it.',
+  'settings.gruply.needsSetup': 'Enter your email and a key before connecting.',
+  'settings.gruply.connected': 'Connected. {count} tasks with a due date.',
   'settings.nudges': 'Interruptions',
   'settings.nudges.hint':
     'Quiet hours silence everything except a task due right now. GNOME Do Not Disturb and a snooze silence everything.',

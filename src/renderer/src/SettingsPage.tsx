@@ -246,6 +246,9 @@ export function SettingsPage() {
   const [busy, setBusy] = useState(false);
   const [clientIdDraft, setClientIdDraft] = useState<string | null>(null);
   const [tenantDraft, setTenantDraft] = useState<string | null>(null);
+  const [gruplyEmailDraft, setGruplyEmailDraft] = useState<string | null>(null);
+  const [gruplyKeyDraft, setGruplyKeyDraft] = useState('');
+  const [secrets, setSecrets] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     let alive = true;
@@ -260,6 +263,9 @@ export function SettingsPage() {
     });
     void window.wisp.getSignalsStatus().then((s) => {
       if (alive) setSignals(s);
+    });
+    void window.wisp.secretStatus().then((s) => {
+      if (alive) setSecrets(s);
     });
     void window.wisp.getSpeechStatus().then((s) => {
       if (alive) setSpeech(s);
@@ -592,6 +598,73 @@ export function SettingsPage() {
             <span>{t('settings.outlook.silence')}</span>
           </label>
           <p className="hint">{t('settings.outlook.silence.hint')}</p>
+        </section>
+
+        <section className="field">
+          <span className="label">{t('settings.gruply')}</span>
+          <p className="hint">{t('settings.gruply.hint')}</p>
+          {signals && (
+            <p className={signals.connectors.gruply.state === 'error' ? 'hint notice' : 'hint'}>
+              {statusLine(signals, 'gruply', 'settings.gruply.connected')}
+            </p>
+          )}
+          <label className="inline" htmlFor="gruplyEmail">
+            {t('settings.gruply.email')}
+          </label>
+          <input
+            id="gruplyEmail"
+            type="email"
+            value={gruplyEmailDraft ?? config.gruply.email}
+            spellCheck={false}
+            autoComplete="off"
+            onChange={(e) => {
+              setGruplyEmailDraft(e.target.value);
+            }}
+            onBlur={() => {
+              if (gruplyEmailDraft !== null) {
+                save({ gruply: { ...config.gruply, email: gruplyEmailDraft.trim() } });
+                setGruplyEmailDraft(null);
+              }
+            }}
+          />
+          <p className="hint">{t('settings.gruply.email.hint')}</p>
+          <label className="inline" htmlFor="gruplyKey">
+            {t('settings.gruply.key')}
+          </label>
+          <div className="keyRow">
+            <input
+              id="gruplyKey"
+              type="password"
+              value={gruplyKeyDraft}
+              autoComplete="off"
+              onChange={(e) => {
+                setGruplyKeyDraft(e.target.value);
+              }}
+            />
+            <button
+              type="button"
+              disabled={gruplyKeyDraft.length === 0}
+              onClick={() => {
+                void window.wisp.setSecret('gruply', gruplyKeyDraft).then((s) => {
+                  setSecrets(s);
+                  setGruplyKeyDraft('');
+                });
+              }}
+            >
+              {t('settings.speech.apiKey.save')}
+            </button>
+          </div>
+          <p className="hint">{t('settings.gruply.key.hint')}</p>
+          {secrets.gruplyFromEnv === true && (
+            <p className="hint notice">{t('settings.gruply.key.fromEnv')}</p>
+          )}
+          {secrets.gruply === true && secrets.gruplyFromEnv !== true && (
+            <p className="hint">{t('settings.gruply.key.set')}</p>
+          )}
+          {(config.gruply.email.length === 0 || secrets.gruply !== true) && (
+            <p className="hint notice">{t('settings.gruply.needsSetup')}</p>
+          )}
+          {actions('gruply', config.gruply.email.length > 0 && secrets.gruply === true)}
         </section>
 
         <section className="field">
