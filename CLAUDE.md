@@ -52,8 +52,8 @@ transparent, non-focusable X11 window (through XWayland) that moves itself with 
 
 ## Phase 1 shape
 
-- Behaviour is a reducer in `src/main/brain/actor.ts` over idle, walk, sit, sleep, alert and
-  drag. No XState. Randomness and time are arguments.
+- Behaviour is a reducer in `src/main/brain/actor.ts` over idle, walk, sit, sleep, alert, drag,
+  celebrate, dance, pet and startle. No XState. Randomness and time are arguments.
 - Main is glue: it samples the screen, feeds the reducer, moves the window, sends pose
   changes. Logic that needs a test belongs in brain, not in index.ts.
 - The right-click menu is the kill switch. Shortcut and tray are secondary and may not exist.
@@ -66,8 +66,9 @@ transparent, non-focusable X11 window (through XWayland) that moves itself with 
 - Connectors return `Signal[]` and nothing else. The MCP host in `src/main/mcp/` knows nothing
   about ClickUp; the adapter in `src/main/signals/clickup.ts` knows nothing about OAuth.
 - Tool results are validated with Zod before anything is stored. Unknown fields pass through.
-- Announcements are decided in `src/main/brain/signals.ts`, pure, with `now` injected. Main only
-  shows what the brain decided and records that it was shown.
+- Announcements are decided in the brain, pure, with `now` injected. Main only shows what the
+  brain decided and records that it was shown. Phase 3 took that decision over: the file is
+  `src/main/brain/nudge.ts`, and the rule below is the one that binds.
 - Secrets go through `SecretStore` (safeStorage). Never write a token to config.json or a log.
 
 ## Phase 3 shape
@@ -134,6 +135,18 @@ Added after the roadmap closed. The rules that hold this together:
   validated on the main side before it is used, every time, never on the renderer side only.
 - An error shown to someone drawing art names the file and says what to change. It is written
   for a person who has never seen a sprite sheet, and it is written once, in the validator.
+- Anything a window needs for its first paint rides in on the URL, never over IPC. Windows are
+  shown on `ready-to-show`, which fires before a round trip can land, so asking main means being
+  seen in the wrong state first. This is why the theme is a query parameter read by the preload
+  and not a config call from the renderer. Simplifying it back reintroduces a light flash on
+  every launch in night mode, and the mascot brightening before it dims.
+- A dance only interrupts a settled pose. The music poll runs every six seconds and a nudge
+  bubble is up for twelve, so reconciling against any pose at all talks over the things that are
+  answering the user. `DANCE_INTERRUPTS` in `src/main/brain/music.ts` is that list.
+- A cap on how many bytes a file may occupy says nothing about how many bytes come out of a
+  decompressor, and a cap read out of the file's own header is a cap the attacker picked. Bounds
+  on untrusted input are absolute constants, and anything the file declares may only tighten
+  them.
 
 ## Phase 0 findings worth remembering
 

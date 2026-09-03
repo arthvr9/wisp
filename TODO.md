@@ -1,9 +1,56 @@
-# Porting Wisp to Windows and macOS
+# Wisp: what is left to do
 
-A study of what binds this app to Linux, what the equivalents are, and in what order to do the
-work. Written against the code as it stands, not against Electron in general.
+Two parts. The near term work first, then the porting study, which is long and stands on its own.
 
-## 1. What the app assumes today
+## Near term
+
+Nothing here is started. Each entry says what is wrong now, not only what to build, because the
+reason is the part that gets lost.
+
+### Settings should be more than one window
+
+The settings window is one long scroll: name, language, mascot, draw your own, autostart, follow
+the cursor, night mode, music, the shortcut, three connectors, quiet hours and the interruption
+budget, and the voice. That is fourteen sections in one column. Finding the calendar link means
+scrolling past everything else, and the page has grown every phase without ever being
+reorganised. Split it, by whatever division reads best when the pieces are laid out: probably the
+creature itself, the work tools it reads, and when it is allowed to speak.
+
+Two things to keep while doing it. Only the settings window is trusted with the calendar link, so
+whatever replaces `openSettingsWindows()` in `src/main/index.ts` has to keep that boundary, and
+the rule is that owned windows are listed explicitly rather than settings being detected. And
+every window now takes its theme on the URL, so a new one has to pass `theme()` the way the four
+existing ones do.
+
+### The Wisp expressions are too coarse
+
+There are three: bright, plain and low, one still frame each, chosen by mood and painted over a
+band across the eyes on every pose but sleep, celebrate, pet and startle. Six moods share three
+faces, so the two ends of the ladder look the same as their neighbours, and because the overlay
+is one frame it cannot blink, which is most of why the idle reads as a stare.
+
+Worth trying, in the order that costs least: one frame per mood instead of one per three, then a
+blink as a second frame the renderer can drop in occasionally. The constraint is in the comment
+at the top of `scripts/lib/mascots/wisp.mjs`: the eye band has to sit at the same distance from
+the body centre in every pose, so the overlay lands where the eyes actually are.
+
+### The flame on his head needs a different shape
+
+It reads as a flame now rather than as the stalk the first version was, but it is still narrow
+and it still leans the same way in every frame that is not the dance. A flame is wider at the
+neck than it looks, it curls rather than tapers, and its shape should change frame to frame even
+while the body is still. The dance already proves the geometry can carry a lean, since the flame
+whips through the turns there; the idle does not use any of it.
+
+The `flare` knob added for the startle widens it, and the startle is the pose the art agent
+called weakest, so the two problems are probably the same problem.
+
+## The porting study
+
+What binds this app to Linux, what the equivalents are, and in what order to do the work. Written
+against the code as it stands, not against Electron in general.
+
+### 1. What the app assumes today
 
 Wisp assumes an X11 window server reached through XWayland, a GNOME session, and a handful of
 command line tools on `PATH`. The mascot is an override-redirect X window produced by
@@ -15,7 +62,7 @@ fullscreen, tray availability, compositor CPU) is a subprocess call to `gsetting
 `busctl`, or a read of `/proc`. On Windows and macOS none of those four exist, and the free
 floating behaviour has to be asked for explicitly instead of being a side effect.
 
-## 2. Every Linux specific behaviour
+### 2. Every Linux specific behaviour
 
 Risk is the risk of the port of that piece, not the importance of the feature.
 
@@ -51,7 +98,7 @@ loopback server binds `127.0.0.1` which is portable, `shell.openExternal` is por
 everything under `src/main/brain/`, `src/main/connectors/`, `src/main/ics/`, `src/main/speech/`
 and `src/renderer/` has no platform surface.
 
-## 3. macOS problems with no Linux equivalent
+### 3. macOS problems with no Linux equivalent
 
 - **Code signing and notarisation.** Anything distributed to another machine must be signed with
   a Developer ID certificate and notarised, or Gatekeeper refuses it. Enrolment in the Apple
@@ -91,7 +138,7 @@ and `src/renderer/` has no platform surface.
 Paid: the Developer Program (99 USD per year) for signing and notarisation, therefore also for a
 reliable Keychain and a working login item. Everything else in this list is free.
 
-## 4. Windows problems
+### 4. Windows problems
 
 - **Taskbar.** `skipTaskbar: true` is already set on all three floating windows and is real on
   Windows. Note that `focusable: false` implies it anyway, per the docs. Nothing to build, but it
@@ -127,7 +174,7 @@ reliable Keychain and a working login item. Everything else in this list is free
   whether moving a layered transparent window 30 times a second against DWM produces tearing or
   trails, and what it costs in CPU. Nothing in the docs answers that, only the machine will.
 
-## 5. Recommended order of work
+### 5. Recommended order of work
 
 **Phase 1: make it start on Windows, change nothing else.** Cheapest step, largest information
 yield. Add per platform npm scripts so the two Linux flags are only passed on Linux, make the
@@ -186,7 +233,7 @@ other people" (needs the developer account and a Mac in the loop for every relea
 **Phase 5: sign and notarise, if and only if distributing.** Decide this from the answer to the
 first open question in section 8, not by default.
 
-## 6. What to refactor before porting, not after
+### 6. What to refactor before porting, not after
 
 `src/main/stage/` is the right seam for window _calls_, and CLAUDE.md already enforces that every
 `setBounds`, `setShape` and `setAlwaysOnTop` lives there. But it is currently a single
@@ -230,7 +277,7 @@ know nothing about the platform, `movement.ts` works in DIP which is the correct
 three, and the renderer has no platform surface at all. Roughly the top third of the codebase
 ports for free, which is the good news in this document.
 
-## 7. Things to disable rather than port
+### 7. Things to disable rather than port
 
 - **Do not disturb detection** on Windows and macOS. Neither has a supported API. The Windows
   route needs `SHQueryUserNotificationState` through native code, and the macOS route needs a
@@ -251,7 +298,7 @@ ports for free, which is the good news in this document.
 - **`--no-sandbox`.** Off Linux it is a security regression for no benefit.
 - **The `.env` loader** stays as is: it is dev only and already inert in a packaged build.
 
-## 8. Open questions and unverified claims
+### 8. Open questions and unverified claims
 
 Questions only the owner can answer:
 
