@@ -136,3 +136,21 @@ describe('icsSignals', () => {
     expect(signals).toHaveLength(1);
   });
 });
+
+describe('a calendar with far too many events', () => {
+  it('caps the list it hands on', () => {
+    const now = Date.UTC(2026, 8, 3, 12, 0, 0);
+    const events = Array.from({ length: 900 }, (_, i) => ({
+      uid: `bulk-${i}`,
+      summary: `Event ${i}`,
+      startMs: now + i * 1000,
+      endMs: now + i * 1000 + 60_000,
+      allDay: false,
+      cancelled: false,
+      transparent: false,
+      organizer: '',
+      exceptions: [],
+    }));
+    expect(icsSignals(events, { nowMs: now, horizonHours: 24 })).toHaveLength(500);
+  });
+});

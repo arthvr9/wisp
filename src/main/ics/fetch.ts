@@ -10,6 +10,33 @@ function parseHttpUrl(url: string): URL | undefined {
   }
 }
 
+const TOO_LARGE = 'the calendar is larger than this app will read';
+
+// A published calendar with years of history can be tens of megabytes, and none of it past the
+// window is useful. The header is a hint the server may not send, so the body is read in
+// chunks and abandoned as soon as it passes the cap, rather than buffered whole and measured.
+async function readCapped(res: Response): Promise<string> {
+  const body = res.body;
+  if (body === null) return '';
+  const decoder = new TextDecoder();
+  // The DOM lib types Response.body as a stream of any, so the chunk type is stated here.
+  const reader = (body as ReadableStream<Uint8Array>).getReader();
+  let size = 0;
+  let text = '';
+  try {
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      size += chunk.value.byteLength;
+      if (size > MAX_BYTES) throw new Error(TOO_LARGE);
+      text += decoder.decode(chunk.value, { stream: true });
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+  return text + decoder.decode();
+}
+
 export async function fetchIcsText(url: string, fetchFn: typeof fetch = fetch): Promise<string> {
   const parsed = parseHttpUrl(url);
   if (parsed === undefined) {
@@ -27,13 +54,8 @@ export async function fetchIcsText(url: string, fetchFn: typeof fetch = fetch): 
   }
 
   const length = Number(res.headers.get('content-length') ?? '0');
-  if (length > MAX_BYTES) throw new Error('the calendar is larger than this app will read');
-  const text = await res.text();
-  // A published calendar with years of history can be tens of megabytes, and none of it past
-  // the window is useful. The header is a hint only, so the body is checked as well.
-  if (text.length > MAX_BYTES) {
-    throw new Error('the calendar is larger than this app will read');
-  }
+  if (length > MAX_BYTES) throw new Error(TOO_LARGE);
+  const text = await readCapped(res);
   if (!text.trim().startsWith('BEGIN:VCALENDAR')) {
     throw new Error('the calendar link did not return an ICS calendar');
   }

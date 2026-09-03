@@ -408,8 +408,11 @@ void app.whenReady().then(async () => {
     return openSettingsWindows().some((w) => w.webContents === contents);
   }
 
+  // Anything that is not one of the windows Wisp owns is a settings window. Listing the owned
+  // ones explicitly means a new window added later defaults to the safe side.
   function openSettingsWindows() {
-    return BrowserWindow.getAllWindows().filter((w) => w !== stage.win);
+    const owned = [stage.win, panel.win, bubble.win];
+    return BrowserWindow.getAllWindows().filter((w) => !owned.includes(w));
   }
 
   ipcMain.handle(IPC.configGet, (event) =>

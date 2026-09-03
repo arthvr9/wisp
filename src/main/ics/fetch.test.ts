@@ -70,3 +70,27 @@ describe('fetchIcsText', () => {
     ).rejects.toThrow(/http or https/);
   });
 });
+
+describe('a calendar that is too large', () => {
+  function bodyOf(text: string): Response {
+    const bytes = new TextEncoder().encode(text);
+    return new Response(bytes, { status: 200 });
+  }
+
+  it('stops reading once the body passes the cap', async () => {
+    const huge = 'BEGIN:VCALENDAR\r\n' + 'X-PAD:'.padEnd(9 * 1024 * 1024, 'x');
+    await expect(
+      fetchIcsText('https://example.com/a.ics', () => Promise.resolve(bodyOf(huge))),
+    ).rejects.toThrow(/larger than this app will read/);
+  });
+
+  it('rejects on the content-length header alone', async () => {
+    const res = new Response('BEGIN:VCALENDAR', {
+      status: 200,
+      headers: { 'content-length': String(20 * 1024 * 1024) },
+    });
+    await expect(
+      fetchIcsText('https://example.com/a.ics', () => Promise.resolve(res)),
+    ).rejects.toThrow(/larger than this app will read/);
+  });
+});

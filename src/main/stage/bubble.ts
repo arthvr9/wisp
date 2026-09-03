@@ -11,6 +11,7 @@ export const BUBBLE_HEIGHT = 76;
 const GAP = 4;
 
 export interface Bubble {
+  readonly win: BrowserWindow;
   show(message: BubbleMessage): void;
   hide(): void;
   follow(mascotX: number, mascotY: number, displayLeft: number, displayRight: number): void;
@@ -49,6 +50,7 @@ export function createBubble(): Bubble {
 
   let visible = false;
   return {
+    win,
     show(message) {
       win.webContents.send(IPC.bubble, message);
       if (!visible) {
