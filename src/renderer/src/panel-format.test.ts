@@ -96,16 +96,16 @@ describe('formatTimeLeft', () => {
     expect(formatTimeLeft(item, t)).toBe('14:00-14:30');
   });
 
-  it('shows the weekday for a task due tomorrow', () => {
+  it('shows the weekday and the time for a task due tomorrow', () => {
     const now = new Date(2026, 8, 2, 10, 0).getTime();
     const dueAt = new Date(2026, 8, 3, 9, 0).getTime();
-    expect(formatTimeLeft(taskItem(dueAt, now, 'tomorrow'), t)).toBe('Thu');
+    expect(formatTimeLeft(taskItem(dueAt, now, 'tomorrow'), t)).toBe('Thu 09:00');
   });
 
-  it('shows the weekday for a task due later this week', () => {
+  it('shows the weekday and the time for a task due later this week', () => {
     const now = new Date(2026, 8, 2, 10, 0).getTime();
     const dueAt = new Date(2026, 8, 7, 17, 0).getTime();
-    expect(formatTimeLeft(taskItem(dueAt, now, 'week'), t)).toBe('Mon');
+    expect(formatTimeLeft(taskItem(dueAt, now, 'week'), t)).toBe('Mon 17:00');
   });
 
   it('shows a short date for a task due beyond the week', () => {

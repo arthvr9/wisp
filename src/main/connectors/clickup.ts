@@ -7,7 +7,9 @@ import type { Signal } from '../../shared/signals';
 import type { Connector } from './types';
 
 const CLICKUP_URL = 'https://mcp.clickup.com/mcp';
-const HORIZON_DAYS = 14;
+// The panel lists everything open, so the window has to be wider than the two weeks that
+// were enough when it only showed today.
+const HORIZON_DAYS = 30;
 const SIGNAL_PREFIX = 'clickup:';
 
 function taskIdOf(signalId: string): string {

@@ -48,7 +48,7 @@ export interface FetchOptions {
 
 const DAY_MS = 86_400_000;
 const DEFAULT_PAST_DAYS = 30;
-const DEFAULT_HORIZON_DAYS = 14;
+const DEFAULT_HORIZON_DAYS = 30;
 // There is no endpoint that lists a user's tasks directly, so every sync walks active projects
 // and asks each one for its tasks. These caps keep that walk from turning into a hundred
 // requests when the workspace grows.

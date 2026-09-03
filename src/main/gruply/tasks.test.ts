@@ -112,7 +112,7 @@ describe('fetchGruplySignals', () => {
         return envelope([
           task('past', { due_date: new Date(now - 40 * DAY_MS).toISOString() }),
           task('inrange', { due_date: new Date(now - 10 * DAY_MS).toISOString() }),
-          task('future', { due_date: new Date(now + 20 * DAY_MS).toISOString() }),
+          task('future', { due_date: new Date(now + 40 * DAY_MS).toISOString() }),
           task('nodue', { due_date: null }),
         ]);
       }

@@ -48,7 +48,10 @@ export function formatTimeLeft(item: DayItem, t: Translate): string {
   if (minutesLeft < SOON_MINUTES) return t('panel.time.inMinutes', { minutes: minutesLeft });
   if (group === 'today') return formatClock(signal.dueAt);
   if (group === 'later') return formatDate(signal.dueAt, t);
-  return nameAt(t('panel.time.weekdays'), new Date(signal.dueAt).getDay());
+  // A weekday alone loses the half a reader actually needs for something due soon, so a day
+  // inside the week carries its time as well.
+  const weekday = nameAt(t('panel.time.weekdays'), new Date(signal.dueAt).getDay());
+  return `${weekday} ${formatClock(signal.dueAt)}`;
 }
 
 export interface DayGroupRows {
