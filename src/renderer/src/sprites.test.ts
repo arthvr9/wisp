@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { frameAt, parseSheet } from './sprites';
+import { DEFAULT_STRIDE_PX, frameAt, frameAtPhase, parseSheet } from './sprites';
 import type { AsepriteJson, Frame } from './sprites';
 
 function rect(index: number, duration: number) {
@@ -32,7 +32,7 @@ const json: AsepriteJson = {
       { name: 'celebrate', from: 7, to: 7, direction: 'forward' },
       { name: 'expressions', from: 8, to: 10, direction: 'forward' },
     ],
-    wisp: { bob: { offsetX: [0, 0, 1], offsetY: [0, 1, -1] } },
+    wisp: { stridePx: 8, bob: { offsetX: [0, 0, 1], offsetY: [0, 1, -1] } },
   },
 };
 
@@ -69,6 +69,20 @@ describe('parseSheet', () => {
     const plain: AsepriteJson = { ...json, meta: { frameTags: json.meta.frameTags } };
     const sheet = parseSheet(plain);
     expect(sheet.animations.idle[1]).toMatchObject({ bobX: 0, bobY: 0 });
+    expect(sheet.stridePx).toBe(DEFAULT_STRIDE_PX);
+  });
+
+  it('reads the walk stride the sheet declares', () => {
+    expect(parseSheet(json).stridePx).toBe(8);
+  });
+
+  it('falls back to the default stride when the sheet declares a useless one', () => {
+    const withStride = (stridePx: number): AsepriteJson => ({
+      ...json,
+      meta: { ...json.meta, wisp: { ...json.meta.wisp, stridePx } },
+    });
+    expect(parseSheet(withStride(0)).stridePx).toBe(DEFAULT_STRIDE_PX);
+    expect(parseSheet(withStride(-4)).stridePx).toBe(DEFAULT_STRIDE_PX);
   });
 
   it('throws when a pose tag is missing', () => {
@@ -130,5 +144,51 @@ describe('frameAt', () => {
 
   it('throws on an empty animation', () => {
     expect(() => frameAt([], 0)).toThrow('no frames');
+  });
+});
+
+describe('frameAtPhase', () => {
+  const frames: Frame[] = [0, 1, 2, 3].map((i) => ({
+    x: i * 32,
+    y: 0,
+    w: 32,
+    h: 32,
+    durationMs: 140,
+    bobX: 0,
+    bobY: 0,
+  }));
+
+  it('splits the cycle into equal shares whatever the frame durations say', () => {
+    expect(frameAtPhase(frames, 0).x).toBe(0);
+    expect(frameAtPhase(frames, 0.24).x).toBe(0);
+    expect(frameAtPhase(frames, 0.25).x).toBe(32);
+    expect(frameAtPhase(frames, 0.5).x).toBe(64);
+    expect(frameAtPhase(frames, 0.99).x).toBe(96);
+  });
+
+  it('wraps whole cycles and clamps the end of one', () => {
+    expect(frameAtPhase(frames, 1).x).toBe(0);
+    expect(frameAtPhase(frames, 7.5).x).toBe(64);
+    expect(frameAtPhase(frames, 1000).x).toBe(0);
+  });
+
+  it('never steps backwards as the phase creeps forward', () => {
+    let previous = 0;
+    let wraps = 0;
+    for (let i = 1; i < 4000; i++) {
+      const x = frameAtPhase(frames, i / 1000).x;
+      if (x < previous) wraps++;
+      previous = x;
+    }
+    expect(wraps).toBe(3);
+  });
+
+  it('wraps a phase below zero the same way', () => {
+    expect(frameAtPhase(frames, -0.1).x).toBe(96);
+    expect(frameAtPhase(frames, -1).x).toBe(0);
+  });
+
+  it('throws on an empty animation', () => {
+    expect(() => frameAtPhase([], 0)).toThrow('no frames');
   });
 });

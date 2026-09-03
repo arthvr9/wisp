@@ -243,4 +243,17 @@ function drawIcon() {
 }
 
 /** @type {import('../mascot.mjs').Mascot<GhostSpec>} */
-export const ghost = { id: 'ghost', frames: FRAMES, draw, drawExpression, drawTray, drawIcon };
+// It floats, so there is no foot to measure against. The walk cycle is two bobs of the whole
+// body, and fourteen pixels puts them at a little over three a second at the default walk speed:
+// a drift. At the wisp's eight it flutters, which is the wrong animal.
+const stridePx = 14;
+
+export const ghost = {
+  id: 'ghost',
+  stridePx,
+  frames: FRAMES,
+  draw,
+  drawExpression,
+  drawTray,
+  drawIcon,
+};

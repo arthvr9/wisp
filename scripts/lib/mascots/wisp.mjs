@@ -283,4 +283,17 @@ function drawIcon() {
 }
 
 /** @type {import('../mascot.mjs').Mascot<WispSpec>} */
-export const wisp = { id: 'wisp', frames: FRAMES, draw, drawExpression, drawTray, drawIcon };
+// Each foot swings two pixels either side of the body over the cycle (`feet: [-2, 2]` to
+// `[2, -2]`), so a planted foot travels four pixels against the body. A foot is planted for half
+// the cycle, which puts one full cycle at eight pixels of ground.
+const stridePx = 8;
+
+export const wisp = {
+  id: 'wisp',
+  stridePx,
+  frames: FRAMES,
+  draw,
+  drawExpression,
+  drawTray,
+  drawIcon,
+};

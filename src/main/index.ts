@@ -533,7 +533,9 @@ void app.whenReady().then(async () => {
   function pushPose(): void {
     const m = connectors.modifiers();
     const intensity = actor.celebrateIntensity;
-    const key = `${actor.pose}/${actor.facing}/${m.expression}/${m.speedFactor}/${intensity ?? ''}`;
+    // The walk cycle is driven by the ground covered, so a walking mascot sends every tick.
+    const walkPx = actor.pose === 'walk' ? actor.walkDistance : undefined;
+    const key = `${actor.pose}/${actor.facing}/${m.expression}/${m.speedFactor}/${intensity ?? ''}/${walkPx ?? ''}`;
     if (key === lastPose) return;
     lastPose = key;
     stage.win.webContents.send(IPC.pose, {
@@ -542,6 +544,7 @@ void app.whenReady().then(async () => {
       expression: m.expression,
       speedFactor: m.speedFactor,
       ...(intensity === undefined ? {} : { intensity }),
+      ...(walkPx === undefined ? {} : { walkPx }),
     });
   }
 

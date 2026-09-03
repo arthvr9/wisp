@@ -5,7 +5,7 @@ import type { PoseUpdate } from '../../shared/actor';
 import { defaultConfig } from '../../shared/config';
 import { isMascot } from '../../shared/mascots';
 import type { MascotName } from '../../shared/mascots';
-import { frameAt, parseSheet } from './sprites';
+import { frameAt, frameAtPhase, parseSheet } from './sprites';
 import type { AsepriteJson, Frame, Sheet } from './sprites';
 
 const SIZE = 96;
@@ -99,6 +99,14 @@ function drawFrame(
   ctx.drawImage(image, frame.x, frame.y, frame.w, frame.h, dx * scale, dy * scale, SIZE, SIZE);
 }
 
+// The sheet declares its stride in sprite pixels and the mascot walks in screen pixels, so the
+// stride is scaled the same way the frame is before the two are compared.
+function walkPhase(sheet: Sheet, walkPx: number): number {
+  const frame = sheet.animations.walk[0];
+  const scale = frame ? SIZE / frame.w : 1;
+  return walkPx / (sheet.stridePx * scale);
+}
+
 interface PointerDown {
   x: number;
   y: number;
@@ -143,7 +151,12 @@ export function Mascot() {
       handle = 0;
       if (image.complete && image.naturalWidth > 0) {
         const speed = current.speedFactor > 0 ? current.speedFactor : 1;
-        const frame = frameAt(sheet.animations[current.pose], (now - poseStart) * speed);
+        // Walking is driven by ground covered, which already carries the mood speed factor.
+        // Every other pose is a clock, and there the factor still has to be applied by hand.
+        const frame =
+          current.pose === 'walk' && current.walkPx !== undefined
+            ? frameAtPhase(sheet.animations.walk, walkPhase(sheet, current.walkPx))
+            : frameAt(sheet.animations[current.pose], (now - poseStart) * speed);
         const scale = SIZE / frame.w;
         ctx.clearRect(0, 0, SIZE, SIZE);
         ctx.imageSmoothingEnabled = false;

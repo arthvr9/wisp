@@ -48,7 +48,7 @@ const MAX_LOOP = 8000;
 
 /** @typedef {{ x: number; y: number; w: number; h: number }} Rect */
 /** @typedef {{ rect: Rect; duration: number }} SheetFrame */
-/** @typedef {{ path: string; frames: SheetFrame[]; tags: Map<string, SheetFrame[]> }} Sheet */
+/** @typedef {{ path: string; frames: SheetFrame[]; tags: Map<string, SheetFrame[]>; stridePx?: number }} Sheet */
 /** @typedef {{ sheet: number; rect: Rect; dx: number; dy: number }} Cell */
 /** @typedef {{ duration: number; cells: Cell[] }} OutFrame */
 /**
@@ -133,7 +133,15 @@ function readSheet(id) {
     const to = asNumber(tag.to, `tag ${name}.to`);
     tags.set(name, frames.slice(from, to + 1));
   }
-  return { path: pngPath, frames, tags };
+  const wisp =
+    typeof meta.wisp === 'object' && meta.wisp !== null ? asRecord(meta.wisp, 'meta.wisp') : {};
+  const stride = wisp.stridePx;
+  return {
+    path: pngPath,
+    frames,
+    tags,
+    ...(typeof stride === 'number' ? { stridePx: stride } : {}),
+  };
 }
 
 /**
@@ -407,11 +415,31 @@ function findAseprite() {
   return found;
 }
 
+// The app advances the walk frame by ground covered, not by the sheet's own durations, so a
+// GIF that used those durations would show the cat walking at a pace it never walks at.
+// One cycle covers stridePx sprite pixels at WALK_SPEED_PX_S screen pixels per second.
+const WALK_SPEED_PX_S = 70;
+const SPRITE_SCALE = 3;
+
+/**
+ * @param {Sheet} sheet
+ * @param {SheetFrame[]} frames
+ * @returns {SheetFrame[]}
+ */
+function atWalkingPace(sheet, frames) {
+  const stride = sheet.stridePx;
+  if (stride === undefined || frames.length === 0) return frames;
+  const cycleMs = (stride * SPRITE_SCALE * 1000) / WALK_SPEED_PX_S;
+  const each = Math.round(cycleMs / frames.length);
+  return frames.map((frame) => ({ ...frame, duration: each }));
+}
+
 /**
  * @param {string} binary
  * @param {string} workDir
  * @param {Spec} spec
  */
+
 function render(binary, workDir, spec) {
   const script = join(workDir, 'render.lua');
   writeFileSync(script, luaFor(spec));
@@ -427,7 +455,7 @@ function main() {
     const hero = readSheet(HERO);
     /** @type {Spec[]} */
     const specs = [
-      singleSpec(join(outDir, 'walk.gif'), hero, tagFrames(hero, 'walk')),
+      singleSpec(join(outDir, 'walk.gif'), hero, atWalkingPace(hero, tagFrames(hero, 'walk'))),
       posesSpec(join(outDir, 'poses.gif'), hero, POSES),
     ];
     const sheets = MASCOTS.map(readSheet);

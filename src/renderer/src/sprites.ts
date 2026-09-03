@@ -25,6 +25,7 @@ export interface AsepriteJson {
   meta: {
     frameTags: AsepriteTag[];
     wisp?: {
+      stridePx?: number;
       bob?: {
         offsetX?: number[];
         offsetY?: number[];
@@ -46,7 +47,13 @@ export interface Frame {
 export interface Sheet {
   animations: Record<Pose, Frame[]>;
   expressions: Record<Expression, Frame>;
+  stridePx: number;
 }
+
+// Sprite pixels one full walk cycle covers on the ground, for a sheet that does not declare its
+// own. It is what the old time based cycle covered at the default walk speed, so art from before
+// the field existed keeps the cadence it had.
+export const DEFAULT_STRIDE_PX = 13;
 
 export const POSES: readonly Pose[] = [
   'idle',
@@ -71,6 +78,11 @@ function findTag(json: AsepriteJson, name: string, frameCount: number): Aseprite
     );
   }
   return tag;
+}
+
+function strideOf(json: AsepriteJson): number {
+  const declared = json.meta.wisp?.stridePx;
+  return typeof declared === 'number' && declared > 0 ? declared : DEFAULT_STRIDE_PX;
 }
 
 export function parseSheet(json: AsepriteJson): Sheet {
@@ -103,6 +115,7 @@ export function parseSheet(json: AsepriteJson): Sheet {
   return {
     animations: animations as Record<Pose, Frame[]>,
     expressions: expressions as Record<Expression, Frame>,
+    stridePx: strideOf(json),
   };
 }
 
@@ -119,4 +132,18 @@ export function frameAt(frames: readonly Frame[], elapsedMs: number): Frame {
     t -= frame.durationMs;
   }
   return first;
+}
+
+// The walk cycle advances by ground covered, not by elapsed time, so the feet cannot drift out of
+// step with the speed the mascot is moving at. `phase` is 0 at the start of a cycle and 1 at its
+// end; whole cycles wrap, and since the distance behind it only ever grows, the frame never steps
+// backwards however small a tick is.
+export function frameAtPhase(frames: readonly Frame[], phase: number): Frame {
+  const first = frames[0];
+  if (!first) {
+    throw new Error('Animation has no frames.');
+  }
+  const wrapped = phase - Math.floor(phase);
+  const index = Math.min(Math.floor(wrapped * frames.length), frames.length - 1);
+  return frames[index] ?? first;
 }

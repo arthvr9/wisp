@@ -16,8 +16,10 @@
 //     between jaw and chest. One transparent row there is three screen pixels at 1:3 and it
 //     reads as a severed head, so the top line of a profile body runs flat under the whole
 //     head and only steps down behind it.
-//   - the hind legs bend. The pair steps one pixel back for its last two rows and the front pair
-//     stays straight; four identical posts read as furniture.
+//   - a walking leg is a shape, not a column. Every leg leans: a planted forward leg puts its paw
+//     ahead of its own shoulder and steps back as it rises, a pushing leg is the mirror of that,
+//     and a swinging leg is short, folded and off the ground. Four vertical posts that only
+//     change column and lift a pixel read as a toy marching in place, whatever the timing.
 //
 // Frames are pixel maps: `#` is fur, `l` a cream patch, `p` pink, `-` a crease inside the
 // silhouette. Each layer (far legs behind the body, the body with its tail and near
@@ -39,6 +41,10 @@ import { FRAME } from '../sheet.mjs';
 const PALETTE = {
   outline: [16, 16, 22, 255],
   body: [58, 58, 70, 255],
+  // The far pair is painted a step darker than the near pair, so the two sides read as two sides
+  // even on the frames where a far leg crosses behind a near one.
+  far: [38, 38, 48, 255],
+  lightFar: [176, 167, 147, 255],
   light: [238, 226, 200, 255],
   pink: [226, 146, 158, 255],
   eye: [124, 220, 128, 255],
@@ -100,15 +106,17 @@ const STAND_BODY = [
   '.#################',
   '..###############.',
 ];
-const STAND_BODY_AT = { x: 9, y: 13 };
+// Raised a row above where it used to sit: under it there has to be enough height for a leg to
+// lean, and three rows of visible leg can only hold a post.
+const STAND_BODY_AT = { x: 9, y: 12 };
 
 // A narrow wedge of cream under the chin, widening a little down the chest, and one row along
 // the bottom of the belly. Together about a seventh of the visible body: a broad band across the
 // flank reads as a saddle on a two colour cat, not as a black cat with a pale chest.
 const STAND_MARKS = ['..l', '.ll', '.ll', 'lll', 'lll', '.ll'];
-const STAND_MARKS_AT = { x: 23, y: 16 };
+const STAND_MARKS_AT = { x: 23, y: 15 };
 const STAND_BELLY = ['llllllllll'];
-const STAND_BELLY_AT = { x: 13, y: 23 };
+const STAND_BELLY_AT = { x: 13, y: 22 };
 
 // The walking tail: a four pixel arc that leaves the rump on the diagonal, sweeps up and back
 // and hooks forward at the tip. Every row steps one pixel, so the curve is round: a vertical
@@ -125,7 +133,7 @@ const TAIL_UP = [
   '...####.',
   '....####',
 ];
-const TAIL_UP_AT = { x: 6, y: 8 };
+const TAIL_UP_AT = { x: 6, y: 7 };
 
 // The alert tail: up, with the tip stepped forward and the base still curving out of the rump on
 // the diagonal, because a constant width column joined at ninety degrees reads as a plank.
@@ -143,7 +151,7 @@ const TAIL_STRAIGHT = [
   '...####.',
   '....####',
 ];
-const TAIL_STRAIGHT_AT = { x: 7, y: 5 };
+const TAIL_STRAIGHT_AT = { x: 7, y: 4 };
 
 // Sitting: a wedge with a vertical chest at the front and the back curving down to a heavy
 // rump, steep at the shoulder and flattening at the base, which is the shape a cat actually
@@ -354,10 +362,10 @@ function stamp(mask, art, width, height) {
 }
 
 /** @type {Record<string, string>} */
-const DETAIL = { l: 'light', p: 'pink', '-': 'outline' };
+const DETAIL = { l: 'light', f: 'lightFar', p: 'pink', '-': 'outline' };
 
 /**
- * The `l`, `s`, `p` and `-` cells, painted after the outline pass so they sit inside the
+ * The `l`, `f`, `p` and `-` cells, painted after the outline pass so they sit inside the
  * silhouette rather than being eaten by it.
  * @param {Canvas} canvas
  * @param {Art} art
@@ -378,38 +386,105 @@ function paintDetail(canvas, art) {
  * ones, which is how a leg reads as being behind the body and a wrapped tail as being in front.
  * @param {Canvas} canvas
  * @param {Art[]} parts
+ * @param {'body' | 'far'} [tone]
  */
-function paintParts(canvas, parts) {
+function paintParts(canvas, parts, tone = 'body') {
   if (parts.length === 0) return;
+  const { palette } = canvas;
+  // The far pair is painted flat in its own tone, with no outline of its own: two pixels wide,
+  // an outline would be the whole leg and the two sides would be the same black.
+  const fill = tone === 'far' ? palette.far : palette.body;
+  const edge = tone === 'far' ? palette.far : palette.outline;
+  if (!fill || !edge) throw new Error(`Palette has no ${tone} tone.`);
   const mask = new Uint8Array(canvas.width * canvas.height);
   for (const part of parts) stamp(mask, part, canvas.width, canvas.height);
-  paintMask(canvas, mask, canvas.palette.body, canvas.palette.outline);
+  paintMask(canvas, mask, fill, edge);
   for (const part of parts) paintDetail(canvas, part);
 }
 
+// The four shapes a leg takes, as the offset of each row from the shoulder or hip it hangs off,
+// paw row first and rising from there. A planted leg is what carries the animal: `reach` puts the
+// paw two columns ahead and steps back as it rises, `plant` stands under the joint taking the
+// weight, `push` is the mirror of the reach at the end of the stroke. `swing` is the one leg that
+// is not on the ground: shorter, folded back at the top and forward at the paw, carried through
+// under the belly. Rows above the ones listed stay under the joint, buried in the body.
+/** @typedef {{ dx: number[]; lift: number }} LegShape */
+/** @type {Record<string, LegShape>} */
+const LEG_SHAPES = {
+  reach: { dx: [2, 2, 1], lift: 0 },
+  plant: { dx: [0], lift: 0 },
+  push: { dx: [-2, -2, -1], lift: 0 },
+  swing: { dx: [1, 0, -1], lift: 1 },
+};
+
+// A lateral sequence walk: each leg runs the same four shapes a quarter of a cycle behind the one
+// before it, which is why no two legs are ever in the same shape. On frame 0 the animal is
+// stretched between a near front paw planted ahead of the chest and a far hind paw still on the
+// ground behind the rump, with the far front upright under the chest carrying the weight and the
+// near hind folded and swinging through under the belly.
+const LEG_CYCLE = ['reach', 'plant', 'push', 'swing'];
+
+// Where each leg hangs from, how wide it is and how far it leans. The near pair is four pixels
+// wide with a cream paw; the far pair is two, painted flat in the far tone with a dimmer paw, and
+// sits far enough from its near partner that the two never line up side by side into one seven
+// pixel post. Four legs that each swing four pixels do not fit side by side on an eighteen pixel
+// body, so a far leg is sometimes partly behind a near one. That is what the far side of an
+// animal looks like, and the tone is what keeps it readable; two legs merging into one black mass
+// is not.
+/** @type {Record<string, { x: number; width: number; lean: number; phase: number }>} */
+const LEGS = {
+  nearFront: { x: 23, width: 4, lean: 2, phase: 0 },
+  farFront: { x: 19, width: 2, lean: 2, phase: 1 },
+  farHind: { x: 9, width: 2, lean: 2, phase: 2 },
+  nearHind: { x: 12, width: 4, lean: 2, phase: 3 },
+};
+
 /**
- * A leg. Near legs are four pixels wide and end in a two pixel pale paw, far legs are two and
- * stay dark all the way down, which is the cheapest way to say which pair is closer.
- *
- * A hind leg steps one pixel back for its last two rows. That is the hock, and a cat has one:
- * four identical straight posts read as furniture, and the difference costs two pixels.
- * @param {number} x rearmost column, which the two rows below the hock stand on
+ * One leg in one shape. The bottom row is the paw: pale in the middle, because at this size those
+ * light pixels are the only thing that lets the eye follow one foot around the cycle.
+ * @param {{ x: number; width: number; lean: number }} leg
+ * @param {number} top
+ * @param {number} ground
+ * @param {string} shape
+ * @returns {Art}
+ */
+function legArt(leg, top, ground, shape) {
+  const form = LEG_SHAPES[shape];
+  if (!form) throw new Error(`Unknown leg shape ${shape}.`);
+  const bottom = ground - form.lift;
+  const offset = (/** @type {number} */ y) => {
+    const raw = form.dx[bottom - y] ?? 0;
+    return raw === 0 ? 0 : Math.sign(raw) * Math.min(Math.abs(raw), leg.lean);
+  };
+  let left = 0;
+  for (let y = top; y <= bottom; y++) left = Math.min(left, offset(y));
+  const shaft = '#'.repeat(leg.width);
+  const pale = leg.width > 2 ? 'l' : 'f';
+  const paw = leg.width > 2 ? `#${pale.repeat(leg.width - 2)}#` : pale.repeat(leg.width);
+  /** @type {string[]} */
+  const rows = [];
+  for (let y = top; y <= bottom; y++) {
+    rows.push('.'.repeat(offset(y) - left) + (y === bottom ? paw : shaft));
+  }
+  return { x: leg.x + left, y: top, rows };
+}
+
+/**
+ * A leg that is not walking: a straight post. The hanging and hopping poses want one, since a cat
+ * held by the scruff or in mid air is not striding.
+ * @param {number} x
  * @param {number} top
  * @param {number} bottom paw row
  * @param {'near' | 'far'} kind
- * @param {boolean} [hock]
  * @returns {Art}
  */
-function legArt(x, top, bottom, kind, hock = false) {
+function postArt(x, top, bottom, kind) {
   const near = kind === 'near';
   const shaft = near ? '####' : '##';
   const paw = near ? '#ll#' : '##';
   /** @type {string[]} */
   const rows = [];
-  for (let y = top; y <= bottom; y++) {
-    const cells = y === bottom ? paw : shaft;
-    rows.push(hock && y < bottom - 1 ? `.${cells}` : cells);
-  }
+  for (let y = top; y <= bottom; y++) rows.push(y === bottom ? paw : shaft);
   return { x, y: top, rows };
 }
 
@@ -502,6 +577,7 @@ function paintExpression(canvas, leftX, rightX, bottom, expression) {
  *   eyes?: EyeStyle,
  *   mouth?: boolean,
  *   step?: number,
+ *   walk?: number,
  *   tailUp?: boolean,
  *   tailFlick?: boolean,
  *   tailDx?: number,
@@ -513,7 +589,7 @@ function paintExpression(canvas, leftX, rightX, bottom, expression) {
 /** @type {Record<string, [number, number]>} */
 const HEAD_AT = {
   sit: [16, 5],
-  stand: [15, 8],
+  stand: [15, 7],
   curl: [15, 19],
   hang: [12, 4],
   jump: [10, 6],
@@ -529,23 +605,6 @@ function headOrigin(spec) {
   };
 }
 
-// Contact, passing, contact, passing. The near front and near hind swing against each other,
-// which is the diagonal a cat actually walks; the far pair stays planted and only lifts a pixel
-// on the passing frames, because four legs crossing on a twenty pixel body turns into one blob.
-// The swings are biased forward rather than centred on the stance: a near leg that steps back
-// past its own far leg merges with it into one seven pixel post.
-// The two passing frames differ by which near paw is off the ground (`hindLift`, `frontLift`):
-// without that they are the same drawing twice and the walk turns into a shuffle. The last entry
-// is not part of the cycle: it is the stance the alert pose stands in.
-/** @type {{ hind: number; front: number; lift: number; hindLift: number; frontLift: number }[]} */
-const LEG_STEPS = [
-  { hind: 1, front: 0, lift: 0, hindLift: 0, frontLift: 0 },
-  { hind: 1, front: 0, lift: 1, hindLift: 2, frontLift: 0 },
-  { hind: 0, front: 1, lift: 0, hindLift: 0, frontLift: 0 },
-  { hind: 0, front: 1, lift: 1, hindLift: 0, frontLift: 2 },
-  { hind: 0, front: 0, lift: 0, hindLift: 0, frontLift: 0 },
-];
-
 /**
  * @typedef {{ behind: Art[]; body: Art[]; front: Art[] }} Layers
  */
@@ -555,24 +614,22 @@ const LEG_STEPS = [
  * @returns {Layers}
  */
 function standLayers(spec) {
-  const step = LEG_STEPS[spec.step ?? 1];
-  if (!step) throw new Error(`Unknown leg step ${String(spec.step)}.`);
-  const top = 20;
+  const top = 19;
   // The whole frame is moved by dy later, so the legs grow by that much instead: a body that
   // lifts a pixel must not take its planted paws with it.
-  const dy = spec.dy ?? 0;
-  const near = GROUND - dy;
-  const far = near - step.lift;
+  const ground = GROUND - (spec.dy ?? 0);
+  // Standing still, every leg is under its own joint. Only the walk runs the cycle.
+  const shapeOf = (/** @type {{ phase: number }} */ leg) =>
+    spec.walk === undefined ? 'plant' : (LEG_CYCLE[(leg.phase + spec.walk) % 4] ?? 'plant');
   const tail = spec.tailUp
     ? { ...TAIL_STRAIGHT_AT, rows: TAIL_STRAIGHT }
     : { ...TAIL_UP_AT, rows: TAIL_UP };
   return {
-    behind: [legArt(20, top, far, 'far'), legArt(10, top, far, 'far', true)],
+    behind: [LEGS.farFront, LEGS.farHind].map((leg) => legArt(leg, top, ground, shapeOf(leg))),
     body: [
       { ...STAND_BODY_AT, rows: STAND_BODY },
       shift(tail, spec.tailDx ?? 0, spec.tailDy ?? 0),
-      legArt(23 + step.front, top, near - step.frontLift, 'near'),
-      legArt(13 + step.hind, top, near - step.hindLift, 'near', true),
+      ...[LEGS.nearFront, LEGS.nearHind].map((leg) => legArt(leg, top, ground, shapeOf(leg))),
       { ...STAND_BELLY_AT, rows: STAND_BELLY },
       { ...STAND_MARKS_AT, rows: STAND_MARKS },
     ],
@@ -587,12 +644,12 @@ function standLayers(spec) {
 function hangLayers(spec) {
   const swing = spec.step ?? 0;
   return {
-    behind: [legArt(13 - swing, 16, 24, 'far')],
+    behind: [postArt(13 - swing, 16, 24, 'far')],
     body: [
       { ...HANG_BODY_AT, rows: HANG_BODY },
       shift({ ...TAIL_HANG_AT, rows: TAIL_HANG }, spec.tailDx ?? 0, 0),
-      legArt(15 + swing, 16, 26, 'near'),
-      legArt(20 + swing, 16, 25, 'near'),
+      postArt(15 + swing, 16, 26, 'near'),
+      postArt(20 + swing, 16, 25, 'near'),
       { ...HANG_MARKS_AT, rows: HANG_MARKS },
     ],
     front: [],
@@ -609,8 +666,8 @@ function jumpLayers(spec) {
     behind: [{ ...TAIL_JUMP_AT, rows: TAIL_JUMP }],
     body: [
       { ...JUMP_BODY_AT, rows: JUMP_BODY },
-      legArt(12, 19, 26, 'far'),
-      legArt(16, 19, 26, 'near'),
+      postArt(12, 19, 26, 'far'),
+      postArt(16, 19, 26, 'near'),
       { ...JUMP_MARKS_AT, rows: JUMP_MARKS },
     ],
     front: [
@@ -664,7 +721,7 @@ function draw(spec) {
   const layers = poseLayers(spec);
   /** @param {Art[]} parts */
   const moved = (parts) => parts.map((part) => shift(part, dx, dy));
-  paintParts(canvas, moved(layers.behind));
+  paintParts(canvas, moved(layers.behind), spec.kind === 'stand' ? 'far' : 'body');
   paintParts(canvas, moved(layers.body));
   paintParts(canvas, headParts(head.x, head.y, spec.ears ?? 'up'));
   paintFace(canvas, head.x, head.y, spec.mouth ?? false);
@@ -691,8 +748,10 @@ function bob(spec) {
 }
 
 // Idle breathes: the head settles a pixel, the ears drop with it, the lids come halfway down and
-// the tail tip flicks. Walk shifts weight, contact frames dropping the body and leaning the head
-// forward. Alert stands tall with the ears up and the tail straight.
+// the tail tip flicks. The walk is carried by the legs: the body lifts one pixel on the two
+// frames where a near paw is off the ground and sits back down on the contacts, and no more than
+// that, because a torso bouncing to sell a walk is covering for legs that are not striding.
+// Alert stands tall with the ears up and the tail straight.
 /** @type {Record<string, CatSpec[]>} */
 const FRAMES = {
   idle: [
@@ -700,10 +759,10 @@ const FRAMES = {
     bob({ kind: 'sit', headDy: 1, ears: 'relaxed', eyes: 'half', tailFlick: true }),
   ],
   walk: [
-    bob({ kind: 'stand', step: 0, dy: 1, headDx: 1, tailDx: -1 }),
-    bob({ kind: 'stand', step: 1, dy: -1, headDy: -1, tailDy: -1 }),
-    bob({ kind: 'stand', step: 2, dy: 1, headDx: 1, tailDx: 1 }),
-    bob({ kind: 'stand', step: 3, dy: -1, headDy: -1, tailDy: -1, tailDx: 1, ears: 'relaxed' }),
+    bob({ kind: 'stand', walk: 0, headDx: 1, tailDx: -1 }),
+    bob({ kind: 'stand', walk: 1, dy: -1, tailDy: -1 }),
+    bob({ kind: 'stand', walk: 2, headDx: 1, tailDx: 1 }),
+    bob({ kind: 'stand', walk: 3, dy: -1, tailDy: -1, tailDx: 1, ears: 'relaxed' }),
   ],
   sit: [
     bob({ kind: 'sit', headDy: 1, ears: 'relaxed' }),
@@ -714,8 +773,8 @@ const FRAMES = {
     bob({ kind: 'curl', eyes: 'closed', ears: 'flat', headDy: 1, zAt: [28, 9] }),
   ],
   alert: [
-    bob({ kind: 'stand', step: 4, tailUp: true }),
-    bob({ kind: 'stand', step: 4, headDy: -1, tailUp: true, tailDy: -1, tailDx: 1 }),
+    bob({ kind: 'stand', tailUp: true }),
+    bob({ kind: 'stand', headDy: -1, tailUp: true, tailDy: -1, tailDx: 1 }),
   ],
   drag: [
     bob({ kind: 'hang', step: 0, ears: 'flat', mouth: true }),
@@ -801,4 +860,19 @@ function drawIcon() {
 }
 
 /** @type {import('../mascot.mjs').Mascot<CatSpec>} */
-export const cat = { id: 'cat', frames: FRAMES, draw, drawExpression, drawTray, drawIcon };
+// Measured off the drawn frames rather than assumed: every paw that is on the ground travels two
+// pixels back against the body from one frame to the next (the near front paw sits at 26.5, 24.5
+// and 22.5 across its three planted frames, and the other three legs match it a quarter cycle
+// apart). A leg is planted for two of the four intervals, so the body has to cover two pixels a
+// frame for those paws to stay still on the ground, which is eight pixels for the whole cycle.
+const stridePx = 8;
+
+export const cat = {
+  id: 'cat',
+  stridePx,
+  frames: FRAMES,
+  draw,
+  drawExpression,
+  drawTray,
+  drawIcon,
+};

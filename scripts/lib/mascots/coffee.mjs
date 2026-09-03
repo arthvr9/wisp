@@ -280,4 +280,16 @@ function drawIcon() {
 }
 
 /** @type {import('../mascot.mjs').Mascot<CoffeeSpec>} */
-export const coffee = { id: 'coffee', frames: FRAMES, draw, drawExpression, drawTray, drawIcon };
+// A mug has no feet either: the walk cycle is the whole cup rocking twice. Same reasoning as the
+// ghost, and a mug that skitters reads as spilling.
+const stridePx = 14;
+
+export const coffee = {
+  id: 'coffee',
+  stridePx,
+  frames: FRAMES,
+  draw,
+  drawExpression,
+  drawTray,
+  drawIcon,
+};

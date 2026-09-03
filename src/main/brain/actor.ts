@@ -15,6 +15,7 @@ export interface ActorState {
   displayId: number;
   poseMs: number;
   poseUntilMs: number;
+  walkDistance: number;
   goalDisplayId?: number;
   paused: boolean;
   follow: FollowState;
@@ -74,6 +75,7 @@ export function createActor(displayId: number, x: number, y: number): ActorState
     displayId,
     poseMs: 0,
     poseUntilMs: DEFAULT_IDLE_MS,
+    walkDistance: 0,
     paused: false,
     follow: initialFollow,
   };
@@ -106,7 +108,14 @@ function grounded(state: ActorState, target: Target): boolean {
 }
 
 function enter(state: ActorState, pose: Pose, untilMs: number): ActorState {
-  return { ...state, pose, poseMs: 0, poseUntilMs: untilMs, celebrateIntensity: undefined };
+  return {
+    ...state,
+    pose,
+    poseMs: 0,
+    poseUntilMs: untilMs,
+    walkDistance: 0,
+    celebrateIntensity: undefined,
+  };
 }
 
 function facingOf(vx: number, fallback: Facing): Facing {
@@ -149,7 +158,10 @@ function move(state: ActorState, target: Target, dtMs: number, mood: MoodModifie
     grounded: true,
   });
   const facing = state.pose === 'walk' ? facingOf(moved.vx, state.facing) : state.facing;
-  return { ...state, ...moved, facing };
+  // Distance, not velocity times time: a bounce reflects x within the tick, and what the paws
+  // have to account for is the ground the window actually covered on screen.
+  const walked = state.pose === 'walk' ? Math.abs(moved.x - state.x) : 0;
+  return { ...state, ...moved, facing, walkDistance: state.walkDistance + walked };
 }
 
 function fall(

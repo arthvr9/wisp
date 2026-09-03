@@ -138,6 +138,68 @@ describe('walk', () => {
   });
 });
 
+describe('walk distance', () => {
+  const walking: ActorState = {
+    ...grounded(),
+    pose: 'walk',
+    poseUntilMs: 9000,
+    vx: WALK_SPEED_PX_S,
+  };
+
+  it('accumulates the ground covered while walking', () => {
+    const s = run(walking, one, 1000, 50);
+    expect(s.walkDistance).toBeCloseTo(Math.abs(s.x - walking.x), 6);
+    expect(s.walkDistance).toBeGreaterThan(60);
+  });
+
+  it('grows faster with a quicker mood and slower with a sluggish one', () => {
+    const slow: MoodModifiers = { expression: 'low', speedFactor: 0.6, pauseFactor: 1 };
+    const quick: MoodModifiers = { expression: 'bright', speedFactor: 1.25, pauseFactor: 1 };
+    const a = run(walking, one, 2000, 50, fixed(0.5), still, false, slow);
+    const b = run(walking, one, 2000, 50, fixed(0.5), still, false, quick);
+    expect(b.walkDistance / a.walkDistance).toBeCloseTo(1.25 / 0.6, 1);
+  });
+
+  it('never moves backwards, however small the tick', () => {
+    let s: ActorState = walking;
+    let last = 0;
+    for (let t = 0; t < 500; t += 1) {
+      s = tick(s, one, 1);
+      expect(s.walkDistance).toBeGreaterThanOrEqual(last);
+      last = s.walkDistance;
+    }
+    expect(last).toBeGreaterThan(0);
+  });
+
+  it('stays at zero while idle and while sitting', () => {
+    expect(run(grounded(), one, 1500, 50, fixed(0.95)).walkDistance).toBe(0);
+    const sat = run({ ...grounded(), pose: 'sit', poseUntilMs: 60_000 }, one, 1500, 50);
+    expect(sat.pose).toBe('sit');
+    expect(sat.walkDistance).toBe(0);
+  });
+
+  it('keeps counting across a bounce off the screen edge', () => {
+    const start: ActorState = {
+      ...grounded(1, 1920 - size - 5),
+      pose: 'walk',
+      poseUntilMs: 5000,
+      vx: WALK_SPEED_PX_S,
+    };
+    const bounced = tick(start, one, 200);
+    expect(bounced.vx).toBeLessThan(0);
+    expect(bounced.walkDistance).toBeGreaterThan(0);
+    const after = tick(bounced, one, 200);
+    expect(after.walkDistance).toBeGreaterThan(bounced.walkDistance);
+  });
+
+  it('resets when the pose changes', () => {
+    const walked = run(walking, one, 1000, 50);
+    expect(walked.walkDistance).toBeGreaterThan(0);
+    expect(reduce(walked, { type: 'alert' }, one).walkDistance).toBe(0);
+    expect(reduce(walked, { type: 'drag-start' }, one).walkDistance).toBe(0);
+  });
+});
+
 describe('follow', () => {
   const cursorOnRight: Cursor = { displayId: 2, idleMs: 0 };
 

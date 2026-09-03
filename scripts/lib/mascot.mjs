@@ -44,6 +44,11 @@ export const MOODS = [
  * @template {FrameSpec} T
  * @typedef {object} Mascot
  * @property {string} id
+ * @property {number} stridePx how many sprite pixels one full walk cycle covers on the ground.
+ *   The renderer advances the walk frames by distance walked rather than by elapsed time, so
+ *   this is what keeps the feet (or the bob) in step with whatever speed the mascot moves at.
+ *   It belongs to the art: measure it from how far a foot travels against the body between
+ *   frames, since a stepping cat and a floating ghost do not agree on it.
  * @property {Record<string, T[]>} frames keyed by pose name, in the order of POSES
  * @property {(spec: T) => import('./canvas.mjs').Canvas} draw one 32x32 sheet frame
  * @property {(expression: Expression) => import('./canvas.mjs').Canvas} drawExpression one 32x32

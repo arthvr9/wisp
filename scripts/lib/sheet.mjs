@@ -27,6 +27,7 @@ const COLUMNS = 4;
  * @param {import('./mascot.mjs').Mascot<T>} mascot
  */
 export function buildSheet(mascot) {
+  if (!(mascot.stridePx > 0)) throw new Error(`Mascot ${mascot.id} declares no walk stride.`);
   const rows = POSES.length + 1;
   const sheet = new Canvas(FRAME * COLUMNS, FRAME * rows);
   /** @type {Record<string, AsepriteFrame>} */
@@ -94,7 +95,7 @@ export function buildSheet(mascot) {
       size: { w: sheet.width, h: sheet.height },
       scale: '1',
       frameTags,
-      wisp: { bob: { offsetX, offsetY } },
+      wisp: { stridePx: mascot.stridePx, bob: { offsetX, offsetY } },
     },
   };
   return { sheet, json };

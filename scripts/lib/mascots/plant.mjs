@@ -227,4 +227,17 @@ function drawIcon() {
 }
 
 /** @type {import('../mascot.mjs').Mascot<PlantSpec>} */
-export const plant = { id: 'plant', frames: FRAMES, draw, drawExpression, drawTray, drawIcon };
+// The pot hops rather than steps: one crouch and one launch per cycle, so the stride is how far
+// one hop carries it. Sixteen pixels is half the pot's own height again, which is the distance a
+// hop that high looks like it covers.
+const stridePx = 16;
+
+export const plant = {
+  id: 'plant',
+  stridePx,
+  frames: FRAMES,
+  draw,
+  drawExpression,
+  drawTray,
+  drawIcon,
+};
