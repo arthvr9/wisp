@@ -44,8 +44,6 @@ function VoiceSection({ t, speech, status, onSave, onStatus }: VoiceSectionProps
   const [keyDraft, setKeyDraft] = useState('');
   const [result, setResult] = useState<SpeechTestResult | null>(null);
   const [busy, setBusy] = useState(false);
-  const [clientIdDraft, setClientIdDraft] = useState<string | null>(null);
-  const [tenantDraft, setTenantDraft] = useState<string | null>(null);
 
   const provider = speech.provider;
   const isCloud = provider === 'openai-compatible' || provider === 'anthropic';
