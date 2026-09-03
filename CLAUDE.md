@@ -87,6 +87,18 @@ transparent, non-focusable X11 window (through XWayland) that moves itself with 
 - The Anthropic adapter uses the official SDK. The OpenAI-compatible adapter is plain fetch and
   exists for Ollama and NVIDIA, not as a way to call Anthropic.
 
+## Phase 5 shape
+
+- A connector is one file implementing `Connector` from `src/main/connectors/types.ts`, plus
+  one config entry and one settings section. The hub knows no source by name. If a third
+  connector needs anything else, the abstraction is wrong and the hub is what changes.
+- The Outlook connector talks to Microsoft Graph directly, not through MCP. That is the point:
+  two sources with nothing in common but the interface.
+- Calendar reads use `calendarView`, never the events list, so recurring series come back as
+  expanded instances and survive a daylight saving change.
+- A meeting produces at most two things: a nudge before it starts and a `SilenceWindow` while
+  it runs. Anything else about meetings belongs in the brain, not in the connector.
+
 ## Phase 0 findings worth remembering
 
 - `focusable: false` makes Chromium create an override-redirect X window. Mutter does not

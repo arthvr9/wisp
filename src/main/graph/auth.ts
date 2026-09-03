@@ -91,7 +91,11 @@ function errorMessage(raw: unknown): string | undefined {
 }
 
 function isInvalidGrant(raw: unknown): boolean {
-  return typeof raw === 'object' && raw !== null && (raw as { error?: unknown }).error === 'invalid_grant';
+  return (
+    typeof raw === 'object' &&
+    raw !== null &&
+    (raw as { error?: unknown }).error === 'invalid_grant'
+  );
 }
 
 export class GraphAuth {
@@ -113,11 +117,9 @@ export class GraphAuth {
   // Concurrent calls share the one flow in progress so a second click never opens a second
   // loopback server or a second browser tab.
   authorize(): Promise<void> {
-    if (this.authorizing === undefined) {
-      this.authorizing = this.runAuthorize().finally(() => {
-        this.authorizing = undefined;
-      });
-    }
+    this.authorizing ??= this.runAuthorize().finally(() => {
+      this.authorizing = undefined;
+    });
     return this.authorizing;
   }
 
@@ -259,13 +261,19 @@ export class GraphAuth {
     return this.storeTokens(json, refreshToken).accessToken;
   }
 
-  private async tokenRequest(body: URLSearchParams, currentRefreshToken?: string): Promise<TokenResponse> {
+  private async tokenRequest(
+    body: URLSearchParams,
+    currentRefreshToken?: string,
+  ): Promise<TokenResponse> {
     const fetchFn = this.opts.fetchFn ?? fetch;
-    const res = await fetchFn(`https://login.microsoftonline.com/${this.tenant}/oauth2/v2.0/token`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: body.toString(),
-    });
+    const res = await fetchFn(
+      `https://login.microsoftonline.com/${this.tenant}/oauth2/v2.0/token`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: body.toString(),
+      },
+    );
     const raw: unknown = await res.json().catch(() => undefined);
     if (!res.ok) {
       // A refresh token that Entra ID has revoked cannot be retried; clearing it here is what
