@@ -33,7 +33,9 @@ export function CustomArtSection({ t, customMascot, onSelect }: CustomArtSection
         setListed(true);
       })
       .catch(() => {
-        if (alive) setListed(true);
+        // Not the same as an empty list. Saying there are no drawings when the read failed would
+        // tell the user their work is gone, and the missing notice below would fire as well.
+        if (alive) setFailed(true);
       });
     return () => {
       alive = false;

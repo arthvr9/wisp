@@ -55,7 +55,9 @@ export interface Sheet {
 // the field existed keeps the cadence it had.
 export const DEFAULT_STRIDE_PX = 13;
 
-export const POSES: readonly Pose[] = [
+// The poses a sheet has to declare, and the source of RequiredPose, so the list and the type
+// cannot drift apart. `satisfies` keeps the literal names while still checking each is a Pose.
+const REQUIRED = [
   'idle',
   'walk',
   'sit',
@@ -63,37 +65,28 @@ export const POSES: readonly Pose[] = [
   'alert',
   'drag',
   'celebrate',
-  'dance',
-  'pet',
-  'startle',
-];
+] as const satisfies readonly Pose[];
 
-/** The poses a sheet has to declare. Everything else names one of these to borrow. */
-type RequiredPose = 'idle' | 'walk' | 'sit' | 'sleep' | 'alert' | 'drag' | 'celebrate';
-
-const REQUIRED: readonly RequiredPose[] = [
-  'idle',
-  'walk',
-  'sit',
-  'sleep',
-  'alert',
-  'drag',
-  'celebrate',
-];
+type RequiredPose = (typeof REQUIRED)[number];
 
 // Poses drawn after the first sheets existed. A sheet without them is not a broken sheet, it is
 // an older one, so each names a pose to borrow instead. This is also what lets a hand drawn
 // mascot ship two poses rather than all ten: everything undrawn falls back rather than throwing.
 //
-// The value is a RequiredPose rather than a Pose so that a fallback can never point at another
-// optional pose. That makes the borrow always resolvable, which is why the code below has no
-// branch for a fallback that leads nowhere: the type rules it out instead of a runtime check
-// that nothing could ever reach.
-const FALLBACK: Partial<Record<Pose, RequiredPose>> = {
+// The record is total over every pose that is not required, so adding a pose to the union
+// without deciding where its frames come from fails to compile rather than at draw time. The
+// value is a RequiredPose rather than a Pose, so a fallback can never point at another optional
+// pose, which is why the code below has no branch for a borrow that leads nowhere.
+const FALLBACK: Record<Exclude<Pose, RequiredPose>, RequiredPose> = {
   dance: 'idle',
   pet: 'idle',
   startle: 'alert',
 };
+
+const OPTIONAL = Object.keys(FALLBACK) as Exclude<Pose, RequiredPose>[];
+
+export const POSES: readonly Pose[] = [...REQUIRED, ...OPTIONAL];
+
 export const EXPRESSIONS: readonly Expression[] = ['bright', 'plain', 'low'];
 const EXPRESSIONS_TAG = 'expressions';
 
@@ -137,9 +130,9 @@ export function parseSheet(json: AsepriteJson): Sheet {
   for (const pose of REQUIRED) required[pose] = framesFor(pose);
 
   const animations: Partial<Record<Pose, Frame[]>> = { ...required };
-  for (const [pose, borrowed] of Object.entries(FALLBACK) as [Pose, RequiredPose][]) {
+  for (const pose of OPTIONAL) {
     const declared = json.meta.frameTags.some((t) => t.name === pose);
-    animations[pose] = declared ? framesFor(pose) : required[borrowed];
+    animations[pose] = declared ? framesFor(pose) : required[FALLBACK[pose]];
   }
   const tag = findTag(json, EXPRESSIONS_TAG, frames.length);
   if (tag.to - tag.from + 1 !== EXPRESSIONS.length) {

@@ -203,12 +203,32 @@ describe('danceAction', () => {
     expect(danceAction('dance', false, false)).toBe('dance-stop');
   });
 
-  it('brings the dance back after something else took the pose away', () => {
+  it('brings the dance back once the interruption has finished', () => {
     // A nudge, a celebration or a drag all end the dance in the reducer. The music has not
-    // changed, so the next poll has to notice and start it again.
-    for (const pose of ['alert', 'celebrate', 'drag', 'sit'] as const) {
+    // changed, so the poll after the mascot settles has to notice and start it again.
+    for (const pose of ['idle', 'sit', 'walk'] as const) {
       expect(danceAction(pose, true, false)).toBe('dance-start');
     }
+  });
+
+  it('waits rather than cutting short a pose that is answering the user', () => {
+    // A nudge bubble is up for twelve seconds and a poll comes every six, so starting a dance
+    // from any of these would talk over it. Petting is the sharpest case: its pose is dispatched
+    // whatever else is going on, and a dance must not delete it on the next tick.
+    for (const pose of ['alert', 'celebrate', 'pet', 'startle', 'drag'] as const) {
+      expect(danceAction(pose, true, false)).toBeUndefined();
+    }
+  });
+
+  it('leaves a sleeping mascot asleep', () => {
+    // It sleeps after five minutes with nobody touching anything. Music starting then is not
+    // evidence that somebody came back.
+    expect(danceAction('sleep', true, false)).toBeUndefined();
+  });
+
+  it('still stops a dance from the dance pose whatever else is true', () => {
+    expect(danceAction('dance', false, false)).toBe('dance-stop');
+    expect(danceAction('dance', true, true)).toBe('dance-stop');
   });
 
   it('does not dance while paused, and ends a dance that was running', () => {

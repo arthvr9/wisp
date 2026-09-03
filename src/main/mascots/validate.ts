@@ -19,6 +19,10 @@ import type { Pose } from '../../shared/actor';
 export const MAX_FILES = 200;
 export const MAX_FILE_BYTES = 1024 * 1024;
 export const MAX_TOTAL_BYTES = 8 * 1024 * 1024;
+// The largest decompressed image this reads. A frame is 32 by 32 and the built-in sheet is
+// 256 by 352, so the real numbers are kilobytes; this leaves room for a sheet many times larger
+// while staying far below anything that would hurt.
+export const MAX_PIXEL_BYTES = 32 * 1024 * 1024;
 
 export interface ValidateOptions {
   maxFiles?: number;
@@ -187,13 +191,20 @@ export function readPng(bytes: Uint8Array): PngRead | null {
     return { width, height, rgba: null };
   }
   const stride = Math.ceil((width * channels * depth) / 8);
+  const declared = height * (stride + 1);
+  // The header says how many bytes the pixels take, but the header is written by whoever made
+  // the file, so on its own it is a cap the attacker chooses: declaring 65535 by 65535 asks for
+  // 17 GB and binds nothing. The absolute limit is what actually holds, and the declared size
+  // only tightens it. Both are needed: the file size caps elsewhere bound what is read from
+  // disk, not what comes out of the decompressor.
+  //
+  // Nothing is decompressed at all for a size no sprite sheet could have. The size still comes
+  // back, so a frame that is the wrong size is still reported as the wrong size rather than as
+  // a broken file.
+  if (declared > MAX_PIXEL_BYTES) return { width, height, rgba: null };
   try {
-    // A PNG's header declares how many bytes its pixels take, so anything past that is either a
-    // broken file or a deliberate bomb. Without the cap a 400 kB file inside every other limit
-    // here inflates to hundreds of megabytes, because the file caps above bound what is read
-    // from disk and not what comes out of the decompressor.
     const raw = inflateSync(Buffer.concat(idat.map((part) => Buffer.from(part))), {
-      maxOutputLength: height * (stride + 1),
+      maxOutputLength: Math.min(declared, MAX_PIXEL_BYTES),
     });
     if (raw.length < height * (stride + 1)) return { width, height, rgba: null };
     const bpp = Math.max(1, Math.ceil((channels * depth) / 8));

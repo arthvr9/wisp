@@ -106,12 +106,22 @@ export function decideMusic(
   );
 }
 
+// Poses a dance is allowed to interrupt. Everything missing from this list is either running
+// out a timer that answers something the user just did, or is the user's own hand on the mascot:
+// a nudge is up for twelve seconds, a celebration for up to six, petting for two and a half, and
+// a drag lasts as long as the mouse is down. A six second poll that started a dance from any of
+// them would cut them all short, and would undo the reason the pet pose is dispatched
+// unconditionally in the first place. Sleep is left out on purpose: music starting while nobody
+// has touched anything for five minutes is not a reason to get up.
+const DANCE_INTERRUPTS: readonly Pose[] = ['idle', 'sit', 'walk'];
+
 /**
  * What to dispatch so the pose agrees with what the music is doing, or nothing when they already
- * agree. Comparing the two rather than acting on the moment the music started is what makes this
- * safe: the reducer is free to drop a dance, and it does, since a drag, a nudge or a celebration
- * all take the pose away. Acting only on the edge leaves the caller believing it is still dancing
- * when it is not, and the dance can never come back after the interruption.
+ * agree or when the mascot is busy with something that should finish first. Comparing the two
+ * rather than acting on the moment the music started is what makes this safe: the reducer is
+ * free to drop a dance, and it does, since a drag, a nudge or a celebration all take the pose
+ * away. Acting only on the edge leaves the caller believing it is still dancing when it is not,
+ * and the dance can never come back after the interruption.
  */
 export function danceAction(
   pose: Pose,
@@ -119,7 +129,9 @@ export function danceAction(
   paused: boolean,
 ): 'dance-start' | 'dance-stop' | undefined {
   const wants = dancing && !paused;
-  if (wants && pose !== 'dance') return 'dance-start';
+  if (wants && pose !== 'dance') {
+    return DANCE_INTERRUPTS.includes(pose) ? 'dance-start' : undefined;
+  }
   if (!wants && pose === 'dance') return 'dance-stop';
   return undefined;
 }

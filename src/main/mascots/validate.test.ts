@@ -9,7 +9,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { frameFileName } from '../../shared/custom-art';
 import type { CustomArtError } from '../../shared/custom-art';
 import { Canvas, encodePng } from './template';
-import { isBlank, readBuiltInSheet, readPng, validateArtDirectory } from './validate';
+import {
+  MAX_FILE_BYTES,
+  isBlank,
+  readBuiltInSheet,
+  readPng,
+  validateArtDirectory,
+} from './validate';
 
 const SPRITES = fileURLToPath(new URL('../../../resources/sprites', import.meta.url));
 const { spec } = readBuiltInSheet(SPRITES);
@@ -110,28 +116,43 @@ function messages(errors: CustomArtError[]): string[] {
 }
 
 describe('readPng bounds', () => {
-  it('refuses a file whose pixels inflate far past what its header declares', () => {
-    // A 32 by 32 header over an IDAT holding a gigabyte of zeroes. It sits inside every byte cap
-    // in this file, because those bound what is read from disk and not what comes out of the
-    // decompressor. Without a cap on the output this grew the process by 812 MB.
-    const ihdr = Buffer.alloc(13);
-    ihdr.writeUInt32BE(32, 0);
-    ihdr.writeUInt32BE(32, 4);
-    ihdr[8] = 8;
-    ihdr[9] = 6;
-    const bomb = rawPng({
-      width: 32,
-      height: 32,
-      depth: 8,
-      colorType: 6,
-      pixels: Buffer.alloc(64 * 1024 * 1024),
-    });
-    expect(bomb.length).toBeLessThan(1024 * 1024);
+  // A gigabyte of zeroes compresses to well under the per file cap, so the caps on what is read
+  // from disk say nothing about what comes out of the decompressor.
+  const bomb = (width: number, height: number): Buffer =>
+    rawPng({ width, height, depth: 8, colorType: 6, pixels: Buffer.alloc(256 * 1024 * 1024) });
+
+  it('refuses a file whose pixels inflate past what its header declares', () => {
+    const file = bomb(32, 32);
+    expect(file.length).toBeLessThan(MAX_FILE_BYTES);
     const before = process.memoryUsage().rss;
-    const read = readPng(bomb);
-    const grew = (process.memoryUsage().rss - before) / 1024 / 1024;
+    const read = readPng(file);
     expect(read?.rgba).toBeNull();
-    expect(grew).toBeLessThan(64);
+    expect((process.memoryUsage().rss - before) / 1024 / 1024).toBeLessThan(64);
+  });
+
+  it('refuses one that lies in its header to raise its own limit', () => {
+    // The header is written by whoever made the file, so deriving the cap from it alone lets the
+    // attacker choose it: 65535 by 65535 asks for 17 GB. This is the case that matters, and a
+    // test built on a truthful header would pass against an implementation that only trusts it.
+    const file = bomb(65535, 65535);
+    expect(file.length).toBeLessThan(MAX_FILE_BYTES);
+    const before = process.memoryUsage().rss;
+    const read = readPng(file);
+    expect((process.memoryUsage().rss - before) / 1024 / 1024).toBeLessThan(64);
+    expect(read?.rgba).toBeNull();
+    // The size still comes back, so a frame of the wrong size is still reported as the wrong
+    // size rather than as a broken file.
+    expect(read?.width).toBe(65535);
+    expect(read?.height).toBe(65535);
+  });
+
+  it('names the wrong size rather than failing on a frame that lies about it', () => {
+    writePose('idle', 8);
+    writeFileSync(join(dir, 'idle-04.png'), bomb(65535, 65535));
+    const result = validateArtDirectory(dir, spec);
+    expect(messages(result.errors)).toEqual([
+      'idle-04.png is 65535 by 65535, it needs to be 32 by 32.',
+    ]);
   });
 });
 

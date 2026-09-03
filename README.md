@@ -278,7 +278,10 @@ memory per Electron process, and the CPU of `gnome-shell` and `Xwayland` from `/
 compositor does the actual moving. On this machine it measures 0.14 percent mean CPU and a p95
 loop deviation of 0.31 ms.
 
-The reactions added after that measurement were budgeted against it. Watching the cursor for a
+The reactions added after that measurement were budgeted against it. These numbers were taken
+by hand rather than by the harness: the per tick figures by running the two functions three
+hundred thousand times each and dividing, the bus read by timing the process tree against a
+baseline of node starting up. Watching the cursor for a
 shake and choosing where to walk cost 0.87 microseconds per tick between them, which is 0.003
 percent of a core and does not move the number. Watching for music is the only real addition:
 one read of the session bus costs about 7 ms of CPU, and at one read every six seconds that is
