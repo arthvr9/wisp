@@ -8,7 +8,8 @@ export interface SpeechConfig {
   model: string;
 }
 
-export type SpeechEvent = 'nudge' | 'celebrate' | 'hello' | 'sleepy' | 'poke';
+export type SpeechEvent =
+  'nudge' | 'celebrate' | 'hello' | 'sleepy' | 'poke' | 'pet' | 'startle' | 'dance' | 'dayEnd';
 
 export interface SpeechRequest {
   event: SpeechEvent;

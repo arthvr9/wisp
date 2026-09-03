@@ -1,3 +1,5 @@
+import { loadPage } from './load';
+import type { Theme } from './load';
 import { BrowserWindow } from 'electron';
 import type { NativeImage } from 'electron';
 import type { Rectangle } from 'electron';
@@ -36,7 +38,7 @@ function computeBounds(mascotX: number, mascotY: number, display: Rectangle): Re
 
 // A second window for the same reason as the bubble: the mascot window has no click-through
 // on Linux, so growing it to hold the panel would make its transparent area eat clicks.
-export function createPanel(): Panel {
+export function createPanel(theme: Theme): Panel {
   const win = new BrowserWindow({
     width: PANEL_WIDTH,
     height: PANEL_HEIGHT,
@@ -55,12 +57,7 @@ export function createPanel(): Panel {
     },
   });
   win.setMenu(null);
-  const devUrl = process.env.ELECTRON_RENDERER_URL;
-  if (devUrl) {
-    void win.loadURL(`${devUrl}/panel.html`);
-  } else {
-    void win.loadFile(join(__dirname, '../renderer/panel.html'));
-  }
+  loadPage(win, 'panel.html', theme);
 
   let visible = false;
 

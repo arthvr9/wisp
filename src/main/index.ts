@@ -15,6 +15,11 @@ import { join } from 'node:path';
 import { autostartPath, setAutostart } from './autostart';
 import { createActor, reduce } from './brain/actor';
 import { activeSilence, quietHoursWindows } from './brain/silence';
+import { feed as feedShake, initialShake } from './brain/gesture';
+import { createLinePicker } from './brain/lines';
+import { danceAction, decideMusic, initialMusicState } from './brain/music';
+import { initialRhythm, step as rhythmStep } from './brain/rhythm';
+import type { RhythmEvent } from './brain/rhythm';
 import type { ActorState } from './brain/actor';
 import { groundY } from './brain/movement';
 import type { DisplayArea, Target } from './brain/movement';
@@ -30,22 +35,28 @@ import { loadDotEnv } from './env';
 import { SecretStore } from './mcp';
 import { SilenceSources } from './silence';
 import { createVoice } from './voice';
-import type { Celebration, Mood } from '../shared/mood';
+import { translator } from '../shared/i18n';
+import type { Params } from '../shared/i18n';
+import type { MessageKey } from '../shared/i18n/en';
+import type { Celebration, Mood, MoodModifiers } from '../shared/mood';
 import type { SpeechEvent, SpeechRequest } from '../shared/speech';
 import type { Nudge } from '../shared/nudges';
 import type { DayItem, SignalAction, SignalSource } from '../shared/signals';
 import { describeEnvironment, formatEnvironment } from './harness/environment';
 import { Harness, formatSummary } from './harness/metrics';
+import { hasCustomMascot } from './mascots';
+import { registerMascotIpc } from './mascots/ipc';
 import { menuTemplate } from './menu';
+import { MusicWatcher, MUSIC_POLL_MS } from './music';
 import { registerShortcut, SHORTCUT } from './shortcut';
 import { createBubble } from './stage/bubble';
 import { createPanel } from './stage/panel';
 import { openSettings } from './stage/settings';
+import type { Theme } from './stage/load';
 import { createStage, MASCOT_SIZE } from './stage/window';
 import { createTray, detectTray } from './tray';
 import type { TrayHandle } from './tray';
 import type { Config } from '../shared/config';
-import { translator } from '../shared/i18n';
 import { IPC } from '../shared/ipc';
 import type { DragStart, EnvironmentInfo } from '../shared/ipc';
 
@@ -73,7 +84,23 @@ if (process.platform === 'linux') {
   }
 }
 
+const RHYTHM_LINES: Record<RhythmEvent, MessageKey> = {
+  morning: 'phrase.morning',
+  endOfDay: 'phrase.endOfDay',
+  friday: 'phrase.friday',
+  welcomeBack: 'phrase.welcomeBack',
+};
+
 const TICK_MS = 33;
+// Long enough to read, short enough that the mascot is not still talking about it later.
+const PET_BUBBLE_MS = 2600;
+const STARTLE_BUBBLE_MS = 2200;
+const RHYTHM_CHECK_MS = 20_000;
+const RHYTHM_BUBBLE_MS = 4200;
+const DANCE_BUBBLE_MS = 3000;
+const TRACK_BUBBLE_MS = 2400;
+// How close the cursor has to be to the middle of the mascot for a shake to be aimed at it.
+const SHAKE_REACH_PX = MASCOT_SIZE;
 const SAMPLE_MS = 5000;
 const BUBBLE_MS = 12_000;
 
@@ -100,6 +127,11 @@ void app.whenReady().then(async () => {
   const appPath = app.getAppPath();
   loadDotEnv(appPath);
   const config = new ConfigStore(join(app.getPath('userData'), 'config.json'));
+  // A mascot folder can be deleted behind the app's back. Clearing the setting here means the
+  // next start shows the built-in art rather than nothing at all.
+  if (config.get().customMascot !== '' && !hasCustomMascot(config.get().customMascot)) {
+    config.set({ customMascot: '' });
+  }
   const broadcast = (channel: string, payload: unknown) => {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(channel, payload);
   };
@@ -121,8 +153,9 @@ void app.whenReady().then(async () => {
   };
   const home = toArea(screen.getPrimaryDisplay());
   let actor: ActorState = createActor(home.id, home.x + 40, groundY(home, MASCOT_SIZE));
-  const stage = createStage(Math.round(actor.x), Math.round(actor.y));
-  const bubble = createBubble();
+  const theme = (): Theme => (config.get().night ? 'dark' : 'light');
+  const stage = createStage(Math.round(actor.x), Math.round(actor.y), theme());
+  const bubble = createBubble(theme());
 
   const silence = new SilenceSources();
   silence.start();
@@ -137,17 +170,17 @@ void app.whenReady().then(async () => {
   const phrase = (n: Nudge): string => {
     switch (n.kind) {
       case 'due-soon':
-        return t('phrase.dueSoon', { minutes: n.minutesLeft, title: n.title });
+        return say('phrase.dueSoon', { minutes: n.minutesLeft, title: n.title });
       case 'due-now':
-        return t('phrase.dueNow', { title: n.title });
+        return say('phrase.dueNow', { title: n.title });
       case 'overdue':
-        return t(n.repeat > 0 ? 'phrase.overdueAgain' : 'phrase.overdue', { title: n.title });
+        return say(n.repeat > 0 ? 'phrase.overdueAgain' : 'phrase.overdue', { title: n.title });
       case 'due-today':
-        return t('phrase.dueToday', { title: n.title });
+        return say('phrase.dueToday', { title: n.title });
       case 'meeting-soon':
-        return t('phrase.meetingSoon', { minutes: n.minutesLeft, title: n.title });
+        return say('phrase.meetingSoon', { minutes: n.minutesLeft, title: n.title });
       case 'meeting-now':
-        return t('phrase.meetingNow', { title: n.title });
+        return say('phrase.meetingNow', { title: n.title });
     }
   };
   // The bubble shows the fixed line at once and swaps in the model's line only if one arrives
@@ -190,7 +223,7 @@ void app.whenReady().then(async () => {
         : c.intensity === 2
           ? 'phrase.celebrate.2'
           : 'phrase.celebrate.3';
-    const fallback = t(key, { title: c.titles[0] ?? '', count: c.count });
+    const fallback = say(key, { title: c.titles[0] ?? '', count: c.count });
     const ms = Math.max(c.intensity === 1 ? 2500 : c.intensity === 2 ? 4000 : 6000, 4000);
     speak('celebrate', fallback, { count: c.count, title: c.titles[0] }, undefined, ms, () => {
       actor = reduce(actor, { type: 'celebrate', intensity: c.intensity }, target);
@@ -284,6 +317,16 @@ void app.whenReady().then(async () => {
     connectors.publishStatus();
     return secretStatus();
   });
+  ipcMain.on(IPC.pet, () => {
+    if (hidden || actor.paused) return;
+    // The pose answers the click directly, so it happens whatever else is going on. The line is
+    // a line: it goes through the same gate as every other reaction, which is what keeps it out
+    // of quiet hours and stops it painting over a nudge that has already been counted.
+    actor = reduce(actor, { type: 'pet' }, target);
+    if (canReact(Date.now())) {
+      speak('pet', say('phrase.pet'), {}, undefined, PET_BUBBLE_MS, () => undefined);
+    }
+  });
   ipcMain.on(IPC.panelToggle, () => {
     togglePanel();
   });
@@ -292,6 +335,7 @@ void app.whenReady().then(async () => {
   });
   app.on('before-quit', () => {
     silence.stop();
+    music.stop();
     connectors.close();
     panel.destroy();
     config.flush();
@@ -306,7 +350,7 @@ void app.whenReady().then(async () => {
       'poke',
       config.get().name,
       connectors.currentMood(),
-      t('phrase.poke'),
+      say('phrase.poke'),
       {},
     );
     return { text: r.text, source: r.source, latencyMs: r.latencyMs };
@@ -321,7 +365,7 @@ void app.whenReady().then(async () => {
   screen.on('display-removed', refreshDisplays);
   screen.on('display-metrics-changed', refreshDisplays);
 
-  const panel = createPanel();
+  const panel = createPanel(theme());
   const togglePanel = () => {
     if (panel.isVisible()) {
       panel.hide();
@@ -336,6 +380,53 @@ void app.whenReady().then(async () => {
   let hidden = false;
   let tray: TrayHandle | undefined;
   let t = translator(config.get().locale, { name: config.get().name });
+  const lines = createLinePicker(Math.random);
+  // Most moments have several wordings. The picker draws one and keeps the previous draw out of
+  // the next, so the mascot does not say the same sentence twice running.
+  const say = (key: MessageKey, params?: Params): string => t(lines.pick(key), params);
+
+  // Music, the rhythm of the day and the shake gesture. None of these carry information, so none
+  // of them go through the nudge budget: they are reactions, not messages.
+  const music = new MusicWatcher();
+  let musicState = initialMusicState;
+  let nextMusicCheck = 0;
+  let rhythm = initialRhythm;
+  let nextRhythmCheck = 0;
+  let shake = initialShake;
+  // Night mode settles the mascot as well as darkening the windows: it walks slower and rests
+  // longer. The mood modifiers are scaled rather than replaced, so a stressed mascot at night is
+  // still more restless than a calm one.
+  const NIGHT_SPEED = 0.7;
+  const NIGHT_PAUSE = 1.6;
+  const nightAdjusted = (m: MoodModifiers): MoodModifiers =>
+    config.get().night
+      ? { ...m, speedFactor: m.speedFactor * NIGHT_SPEED, pauseFactor: m.pauseFactor * NIGHT_PAUSE }
+      : m;
+  let dragTrail: { x: number; y: number } | undefined;
+  let dragVelocity = { vx: 0, vy: 0 };
+
+  // A meeting reports playback exactly as a song does, so browser audio is not trusted while one
+  // is running. The user's preference about being silenced during meetings is a separate
+  // question, which is why this asks with `enabled: true` regardless of it.
+  const inMeeting = (nowMs: number): boolean =>
+    meetingWindows(connectors.signals(), { enabled: true }).some(
+      (w) => w.from <= nowMs && nowMs < w.to,
+    );
+  // Reactions are not nudges and have no budget, but they still keep quiet when everything else
+  // does. A mascot that comments on your Friday during Do Not Disturb is the reason people turn
+  // these things off.
+  const quietNow = (nowMs: number): boolean =>
+    activeSilence(
+      [
+        ...quietHoursWindows(config.get().quietHours, nowMs),
+        ...silence.windows(nowMs),
+        ...meetingWindows(connectors.signals(), { enabled: true }),
+      ],
+      nowMs,
+      'low',
+    ) !== undefined;
+  const canReact = (nowMs: number): boolean =>
+    !hidden && !actor.paused && !bubble.isVisible() && !quietNow(nowMs);
 
   const actions = {
     togglePause() {
@@ -351,7 +442,7 @@ void app.whenReady().then(async () => {
       refreshMenus();
     },
     poke() {
-      speak('poke', t('phrase.poke'), {}, undefined, 4000, () => {
+      speak('poke', say('phrase.poke'), {}, undefined, 4000, () => {
         actor = reduce(actor, { type: 'alert', ms: 4000 }, target);
       });
     },
@@ -362,8 +453,12 @@ void app.whenReady().then(async () => {
       refreshMenus();
       connectors.publishStatus();
     },
+    toggleNight() {
+      config.set({ night: !config.get().night });
+      refreshMenus();
+    },
     openSettings() {
-      openSettings(appPath, config.get().mascot);
+      openSettings(appPath, theme(), config.get().mascot);
     },
     quit() {
       app.quit();
@@ -375,6 +470,7 @@ void app.whenReady().then(async () => {
       paused: actor.paused,
       hidden,
       snoozed: silence.snoozedUntil(Date.now()) !== undefined,
+      night: config.get().night,
     };
   }
 
@@ -412,10 +508,29 @@ void app.whenReady().then(async () => {
   config.onChange((c) => {
     applyConfig(c);
     voice.configure(c.speech);
+    applyMusicSetting(c.music);
+    // The bubble is on this list because it carries the theme too. It gets the redacted config
+    // like the other owned windows: only the settings window is trusted with the calendar link.
     stage.win.webContents.send(IPC.configChanged, withoutSecrets(c));
     panel.win.webContents.send(IPC.configChanged, withoutSecrets(c));
+    bubble.win.webContents.send(IPC.configChanged, withoutSecrets(c));
     for (const w of openSettingsWindows()) w.webContents.send(IPC.configChanged, c);
   });
+
+  // Turning the setting off stops the polling entirely rather than throwing the readings away,
+  // and clears the dance so the mascot does not keep moving to music it can no longer hear.
+  let musicRunning = false;
+  function applyMusicSetting(on: boolean): void {
+    if (on === musicRunning) return;
+    musicRunning = on;
+    if (on) {
+      music.start();
+      return;
+    }
+    music.stop();
+    if (musicState.dancing) actor = reduce(actor, { type: 'dance-stop' }, target);
+    musicState = initialMusicState;
+  }
 
   // Only the settings window edits the calendar link, and anyone holding it can read the
   // calendar, so it never travels to the mascot or the panel.
@@ -441,17 +556,27 @@ void app.whenReady().then(async () => {
     autostartPath: autostartPath(),
   }));
 
+  // Every folder picker for hand drawn art opens in main, so a path never crosses IPC and the
+  // renderer never names a directory. `t` is passed as a getter because main reassigns it when
+  // the locale or the creature's name changes.
+  registerMascotIpc({ t: () => t });
+
   let drag: DragStart | undefined;
   ipcMain.on(IPC.dragStart, (_event, offset: DragStart) => {
     if (!Number.isFinite(offset.offsetX) || !Number.isFinite(offset.offsetY)) return;
     drag = offset;
+    dragTrail = undefined;
+    dragVelocity = { vx: 0, vy: 0 };
     actor = reduce(actor, { type: 'drag-start' }, target);
   });
   ipcMain.on(IPC.dragEnd, () => {
     drag = undefined;
     const b = stage.bounds();
     const displayId = screen.getDisplayMatching(b).id;
-    actor = reduce(actor, { type: 'drag-end', x: b.x, y: b.y, displayId }, target);
+    const { vx, vy } = dragVelocity;
+    dragTrail = undefined;
+    dragVelocity = { vx: 0, vy: 0 };
+    actor = reduce(actor, { type: 'drag-end', x: b.x, y: b.y, displayId, vx, vy }, target);
   });
   let menuShown = false;
   let openMenu: Menu | undefined;
@@ -503,7 +628,7 @@ void app.whenReady().then(async () => {
       togglePanel();
     });
     at(5000, () => {
-      const w = openSettings(appPath, config.get().mascot);
+      const w = openSettings(appPath, theme(), config.get().mascot);
       w.webContents.once('did-finish-load', () => {
         console.log('self-test settings loaded');
         at(1500, () => {
@@ -569,7 +694,7 @@ void app.whenReady().then(async () => {
       console.log(`harness           ${minutes ?? 0} min, results in ${harness.resultsDir}`);
     pushPose();
     if (process.env.WISP_SELFTEST) selfTest();
-    if (process.env.WISP_OPEN_SETTINGS) openSettings(appPath);
+    if (process.env.WISP_OPEN_SETTINGS) openSettings(appPath, theme());
 
     let last = performance.now();
     let nextDueCheck = 0;
@@ -583,7 +708,21 @@ void app.whenReady().then(async () => {
       if (drag) {
         const p = screen.getCursorScreenPoint();
         lastCursor = p;
-        stage.moveTo(p.x - drag.offsetX, p.y - drag.offsetY);
+        const x = p.x - drag.offsetX;
+        const y = p.y - drag.offsetY;
+        // Release velocity is measured here rather than in the renderer, because main is the only
+        // side that knows where the window actually ended up. It is smoothed so that one jittery
+        // frame at the moment of release does not decide how far the mascot flies, and so that
+        // holding it still for a moment before letting go drops it rather than throws it.
+        if (dragTrail && dt > 0) {
+          const k = 0.35;
+          dragVelocity = {
+            vx: dragVelocity.vx * (1 - k) + ((x - dragTrail.x) / dt) * 1000 * k,
+            vy: dragVelocity.vy * (1 - k) + ((y - dragTrail.y) / dt) * 1000 * k,
+          };
+        }
+        dragTrail = { x, y };
+        stage.moveTo(x, y);
         return;
       }
       actor = reduce(
@@ -594,7 +733,7 @@ void app.whenReady().then(async () => {
           rng: Math.random,
           cursor: { displayId: cursorDisplayId(), idleMs: powerMonitor.getSystemIdleTime() * 1000 },
           followCursor: config.get().followCursor,
-          mood: connectors.modifiers(),
+          mood: nightAdjusted(connectors.modifiers()),
         },
         target,
       );
@@ -602,6 +741,64 @@ void app.whenReady().then(async () => {
       pushPose();
 
       const nowMs = Date.now();
+
+      // The cursor was already sampled by cursorDisplayId above, so the shake window is fed from
+      // that reading rather than asking the screen for the pointer a second time. XWayland only
+      // updates the X pointer while it is over an X window, so this reading goes stale when the
+      // pointer is over a native Wayland window. That is harmless here: a shake only counts when
+      // the pointer is over the mascot, which is an X window, so the samples that decide it are
+      // exactly the accurate ones.
+      if (lastCursor) {
+        const result = feedShake(shake, { x: lastCursor.x, y: lastCursor.y, tMs: nowMs });
+        shake = result.state;
+        const overMascot =
+          Math.abs(lastCursor.x - (actor.x + MASCOT_SIZE / 2)) < SHAKE_REACH_PX &&
+          Math.abs(lastCursor.y - (actor.y + MASCOT_SIZE / 2)) < SHAKE_REACH_PX;
+        if (result.shook && overMascot && canReact(nowMs)) {
+          actor = reduce(actor, { type: 'startle', cursorX: lastCursor.x }, target);
+          speak(
+            'startle',
+            say('phrase.startle'),
+            {},
+            undefined,
+            STARTLE_BUBBLE_MS,
+            () => undefined,
+          );
+        }
+      }
+
+      if (nowMs >= nextMusicCheck) {
+        nextMusicCheck = nowMs + MUSIC_POLL_MS;
+        const decision = decideMusic(musicState, music.current(), nowMs, {
+          includeUnverified: !inMeeting(nowMs),
+        });
+        musicState = decision.state;
+        // Reconcile against the pose instead of acting on the edge. See danceAction for why.
+        const action = danceAction(actor.pose, decision.dancing, actor.paused);
+        if (action !== undefined) actor = reduce(actor, { type: action }, target);
+        if (decision.started && canReact(nowMs)) {
+          speak('dance', say('phrase.dance'), {}, undefined, DANCE_BUBBLE_MS, () => undefined);
+        } else if (decision.trackChanged && canReact(nowMs)) {
+          speak('dance', say('phrase.track'), {}, undefined, TRACK_BUBBLE_MS, () => undefined);
+        }
+      }
+
+      if (nowMs >= nextRhythmCheck) {
+        nextRhythmCheck = nowMs + RHYTHM_CHECK_MS;
+        const beat = rhythmStep(rhythm, {
+          nowMs,
+          idleMs: powerMonitor.getSystemIdleTime() * 1000,
+        });
+        rhythm = beat.state;
+        if (beat.event !== undefined && canReact(nowMs)) {
+          const arriving = beat.event === 'morning' || beat.event === 'welcomeBack';
+          const voiceEvent: SpeechEvent = arriving ? 'hello' : 'dayEnd';
+          speak(voiceEvent, say(RHYTHM_LINES[beat.event]), {}, undefined, RHYTHM_BUBBLE_MS, () => {
+            actor = reduce(actor, { type: 'alert', ms: RHYTHM_BUBBLE_MS }, target);
+          });
+        }
+      }
+
       if (nowMs >= nextDueCheck) {
         nextDueCheck = nowMs + 30_000;
         enqueue(connectors.decide(nowMs).nudges);
@@ -621,6 +818,7 @@ void app.whenReady().then(async () => {
       }
     }, TICK_MS);
     connectors.start();
+    applyMusicSetting(config.get().music);
   });
 
   if (harness) {

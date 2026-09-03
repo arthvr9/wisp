@@ -1,3 +1,5 @@
+import { loadPage } from './load';
+import type { Theme } from './load';
 import { BrowserWindow } from 'electron';
 import type { NativeImage } from 'electron';
 import { join } from 'node:path';
@@ -22,7 +24,7 @@ export interface Bubble {
 
 // The bubble is its own window because the mascot window has no click-through on Linux, so
 // enlarging it to hold a bubble would make its transparent area swallow clicks.
-export function createBubble(): Bubble {
+export function createBubble(theme: Theme): Bubble {
   const win = new BrowserWindow({
     width: BUBBLE_WIDTH,
     height: BUBBLE_HEIGHT,
@@ -41,12 +43,7 @@ export function createBubble(): Bubble {
     },
   });
   win.setMenu(null);
-  const devUrl = process.env.ELECTRON_RENDERER_URL;
-  if (devUrl) {
-    void win.loadURL(`${devUrl}/bubble.html`);
-  } else {
-    void win.loadFile(join(__dirname, '../renderer/bubble.html'));
-  }
+  loadPage(win, 'bubble.html', theme);
 
   let visible = false;
   return {

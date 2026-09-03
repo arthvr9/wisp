@@ -55,7 +55,9 @@ export interface Sheet {
 // the field existed keeps the cadence it had.
 export const DEFAULT_STRIDE_PX = 13;
 
-export const POSES: readonly Pose[] = [
+// The poses a sheet has to declare, and the source of RequiredPose, so the list and the type
+// cannot drift apart. `satisfies` keeps the literal names while still checking each is a Pose.
+const REQUIRED = [
   'idle',
   'walk',
   'sit',
@@ -63,7 +65,28 @@ export const POSES: readonly Pose[] = [
   'alert',
   'drag',
   'celebrate',
-];
+] as const satisfies readonly Pose[];
+
+type RequiredPose = (typeof REQUIRED)[number];
+
+// Poses drawn after the first sheets existed. A sheet without them is not a broken sheet, it is
+// an older one, so each names a pose to borrow instead. This is also what lets a hand drawn
+// mascot ship two poses rather than all ten: everything undrawn falls back rather than throwing.
+//
+// The record is total over every pose that is not required, so adding a pose to the union
+// without deciding where its frames come from fails to compile rather than at draw time. The
+// value is a RequiredPose rather than a Pose, so a fallback can never point at another optional
+// pose, which is why the code below has no branch for a borrow that leads nowhere.
+const FALLBACK: Record<Exclude<Pose, RequiredPose>, RequiredPose> = {
+  dance: 'idle',
+  pet: 'idle',
+  startle: 'alert',
+};
+
+const OPTIONAL = Object.keys(FALLBACK) as Exclude<Pose, RequiredPose>[];
+
+export const POSES: readonly Pose[] = [...REQUIRED, ...OPTIONAL];
+
 export const EXPRESSIONS: readonly Expression[] = ['bright', 'plain', 'low'];
 const EXPRESSIONS_TAG = 'expressions';
 
@@ -97,10 +120,19 @@ export function parseSheet(json: AsepriteJson): Sheet {
     bobX: offsetX[i] ?? 0,
     bobY: offsetY[i] ?? 0,
   }));
-  const animations: Partial<Record<Pose, Frame[]>> = {};
-  for (const pose of POSES) {
+  const framesFor = (pose: string): Frame[] => {
     const tag = findTag(json, pose, frames.length);
-    animations[pose] = frames.slice(tag.from, tag.to + 1);
+    return frames.slice(tag.from, tag.to + 1);
+  };
+  // The required poses first, so every borrow below has something to borrow from. Building this
+  // as a total record is what lets the borrow be a plain lookup with no unreachable error path.
+  const required = {} as Record<RequiredPose, Frame[]>;
+  for (const pose of REQUIRED) required[pose] = framesFor(pose);
+
+  const animations: Partial<Record<Pose, Frame[]>> = { ...required };
+  for (const pose of OPTIONAL) {
+    const declared = json.meta.frameTags.some((t) => t.name === pose);
+    animations[pose] = declared ? framesFor(pose) : required[FALLBACK[pose]];
   }
   const tag = findTag(json, EXPRESSIONS_TAG, frames.length);
   if (tag.to - tag.from + 1 !== EXPRESSIONS.length) {

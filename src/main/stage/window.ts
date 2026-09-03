@@ -1,3 +1,5 @@
+import { loadPage } from './load';
+import type { Theme } from './load';
 import { BrowserWindow } from 'electron';
 import type { Rectangle } from 'electron';
 import { join } from 'node:path';
@@ -14,7 +16,7 @@ export interface Stage {
   cutCorners(): ShapeResult;
 }
 
-export function createStage(x: number, y: number): Stage {
+export function createStage(x: number, y: number, theme: Theme): Stage {
   const win = new BrowserWindow({
     x,
     y,
@@ -38,12 +40,7 @@ export function createStage(x: number, y: number): Stage {
 
   win.setAlwaysOnTop(true);
 
-  const devUrl = process.env.ELECTRON_RENDERER_URL;
-  if (devUrl) {
-    void win.loadURL(devUrl);
-  } else {
-    void win.loadFile(join(__dirname, '../renderer/index.html'));
-  }
+  loadPage(win, 'index.html', theme);
 
   win.once('ready-to-show', () => {
     win.showInactive();

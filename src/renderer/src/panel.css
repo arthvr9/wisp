@@ -1,12 +1,4 @@
-:root {
-  --bg: #fafafa;
-  --fg: #1f1f1f;
-  --muted: #6b6b6b;
-  --line: #e2e2e2;
-  --border: #c9c9c9;
-  --accent: #7c3aed;
-  --danger: #b91c1c;
-}
+@import './theme.css';
 
 * {
   box-sizing: border-box;
@@ -238,7 +230,7 @@ button {
   padding: 4px 9px;
   border: 1px solid var(--border);
   border-radius: 2px;
-  background: #fff;
+  background: var(--field);
   color: var(--fg);
   font-size: 12px;
   cursor: pointer;
@@ -266,13 +258,13 @@ button:disabled {
 button.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--accent-fg);
 }
 
 button.primary:hover:not(:disabled) {
-  background: #6d28d9;
-  border-color: #6d28d9;
-  color: #fff;
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: var(--accent-fg);
 }
 
 button:focus-visible,

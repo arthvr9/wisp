@@ -3,8 +3,20 @@ import type { IpcRendererEvent } from 'electron';
 
 import type { PoseUpdate } from '../shared/actor';
 import type { Config } from '../shared/config';
+import type {
+  CustomArtImportResult,
+  CustomMascot,
+  CustomMascotSummary,
+} from '../shared/custom-art';
 import { IPC } from '../shared/ipc';
-import type { BubbleMessage, DragStart, EnvironmentInfo, WispApi } from '../shared/ipc';
+import type {
+  BubbleMessage,
+  CustomArtCheck,
+  CustomArtExport,
+  DragStart,
+  EnvironmentInfo,
+  WispApi,
+} from '../shared/ipc';
 import type { Mood } from '../shared/mood';
 import type { DayItem, Signal, SignalsStatus } from '../shared/signals';
 import type { SpeechStatus } from '../shared/speech';
@@ -84,6 +96,9 @@ const api: WispApi = {
   runAction(signalId, action) {
     return ipcRenderer.invoke(IPC.actionRun, signalId, action) as Promise<DayItem[]>;
   },
+  pet() {
+    ipcRenderer.send(IPC.pet);
+  },
   togglePanel() {
     ipcRenderer.send(IPC.panelToggle);
   },
@@ -122,6 +137,46 @@ const api: WispApi = {
       listener(m as Mood);
     });
   },
+  exportArtTemplate() {
+    return ipcRenderer.invoke(IPC.customArtExport) as Promise<CustomArtExport | null>;
+  },
+  checkArtFolder() {
+    return ipcRenderer.invoke(IPC.customArtCheck) as Promise<CustomArtCheck | null>;
+  },
+  importCustomMascot(name) {
+    return ipcRenderer.invoke(IPC.customArtImport, name) as Promise<CustomArtImportResult | null>;
+  },
+  listCustomMascots() {
+    return ipcRenderer.invoke(IPC.customMascotList) as Promise<CustomMascotSummary[]>;
+  },
+  loadCustomMascot(slug) {
+    return ipcRenderer.invoke(IPC.customMascotLoad, slug) as Promise<CustomMascot | null>;
+  },
+  deleteCustomMascot(slug) {
+    return ipcRenderer.invoke(IPC.customMascotDelete, slug) as Promise<CustomMascotSummary[]>;
+  },
 };
+
+// The theme arrives on the URL and is applied here, before any of the page's own scripts run, so
+// the first paint is already in the right palette. Doing it from the page would mean an IPC round
+// trip, and the window is shown before that lands.
+//
+// The preload compiles under the main process tsconfig, which has no DOM library on purpose: main
+// must not be able to reach for `document` by accident. So the two globals this needs are reached
+// through a narrow local shape rather than by adding DOM to the whole project.
+interface ThemeTarget {
+  documentElement: { setAttribute(name: string, value: string): void } | null;
+  addEventListener(type: string, listener: () => void, options: { once: boolean }): void;
+}
+const globals = globalThis as { document?: ThemeTarget; location?: { search: string } };
+const theme =
+  new URLSearchParams(globals.location?.search ?? '').get('theme') === 'dark' ? 'dark' : 'light';
+
+function applyTheme(): void {
+  globals.document?.documentElement?.setAttribute('data-theme', theme);
+}
+applyTheme();
+// Depending on how early this runs there may be no root element yet, so try again once there is.
+globals.document?.addEventListener('DOMContentLoaded', applyTheme, { once: true });
 
 contextBridge.exposeInMainWorld('wisp', api);

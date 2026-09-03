@@ -1,0 +1,62 @@
+/* The drawings the user imported. Every colour is a token from theme.css, because the app has a
+   night mode and a hardcoded colour is invisible in one of the two. */
+
+.drawings {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.drawing {
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.drawing:last-child {
+  border-bottom: 1px solid var(--line);
+}
+
+.drawingName {
+  font-weight: 500;
+}
+
+.drawing.inUse .drawingName {
+  color: var(--accent);
+}
+
+.drawing .actions {
+  margin-bottom: 0;
+  align-items: center;
+}
+
+.badge {
+  color: var(--accent);
+  font-size: 12px;
+}
+
+button.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+button.danger:hover:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: var(--code-bg);
+}
+
+.artErrors {
+  margin-top: 8px;
+}
+
+.artErrors ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  color: var(--fg);
+  font-size: 12px;
+}
+
+.artErrors li {
+  margin-bottom: 4px;
+  overflow-wrap: anywhere;
+}

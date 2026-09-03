@@ -41,6 +41,17 @@ Five to choose from, and switching takes effect right away. They behave identica
 choice is only about what you want on your screen: the wisp of light it is named after, a cup
 of coffee, a black cat, a ghost, or a seedling in a pot.
 
+## Draw your own
+
+If none of the five is what you want, draw one. Settings has a button that writes a folder of
+blank frames, one file per pose, next to a reference image showing what each pose does and a
+plain text guide explaining them in a sentence each. Draw in whatever you like and save the
+files as PNGs.
+
+You do not have to draw all of it. Draw the standing pose and stop, and every other pose keeps
+the built-in art. Import the folder and it tells you exactly what is wrong if anything is, one
+sentence per problem, naming the file.
+
 ## Install
 
 Download the file for your system from the [releases page](https://github.com/arthvr9/wisp/releases).
@@ -141,6 +152,32 @@ along.
 When you finish something it celebrates, and it scales with how much you finished: a hop for
 one task, a little dance for two or three, a trophy for four or more.
 
+## It reacts to you
+
+Beyond the reminders it notices a few things and reacts to them. None of these count against
+the interruption budget, because none of them are telling you anything. They stay quiet
+whenever reminders would: quiet hours, Do Not Disturb, a meeting.
+
+- **Music.** If something is playing, it dances. It reads the media player interface your
+  desktop already publishes, so Spotify, VLC and the rest are recognised with no setup at all.
+  A browser is a special case, because it reports a video call exactly the way it reports a
+  song, so browser audio only counts when your calendar says you are not in a meeting. You can
+  turn the whole thing off in settings.
+- **Petting.** Double click it.
+- **Startling it.** Shake the pointer over it. It jumps and keeps its distance for a moment.
+- **Throwing it.** Drag it and let go while still moving. It arcs, bounces and settles.
+- **The shape of a day.** A word when you first sit down, when you come back after being away a
+  long while, at the end of the day, and on a Friday afternoon. Each at most once a day.
+
+It also stopped pacing. Where it used to walk back and forth for no reason, it now picks a spot
+and goes there, prefers the edges of the screen, and stays put once it arrives.
+
+## Night mode
+
+One switch, in the right click menu and in settings. The windows go dark and the creature dims
+and settles: it walks slower and rests longer. It follows neither a clock nor your system
+theme, because the point is that you say when you want it quieter.
+
 ## An optional voice
 
 Off by default, in which case it uses fixed lines. If you turn it on, a language model rewrites
@@ -165,6 +202,8 @@ Worth being precise about, since this thing reads your work.
 | Your tasks and meetings    | Stay on your machine, in a database next to the config file                 |
 | Access tokens and API keys | Stored with your system keyring, never in a plain file                      |
 | Task titles                | Leave only if you turn on a cloud voice provider, and only to that provider |
+| What you are listening to  | Read from your own session bus and never sent anywhere, not even to a voice |
+| Art you draw               | Stays in the config directory. Nothing uploads it                           |
 | Anything else              | Nowhere. There is no telemetry, no analytics and no account                 |
 
 ---
@@ -238,6 +277,16 @@ source union, the config shape, an export, and the line that builds it. The hub 
 memory per Electron process, and the CPU of `gnome-shell` and `Xwayland` from `/proc`, since the
 compositor does the actual moving. On this machine it measures 0.14 percent mean CPU and a p95
 loop deviation of 0.31 ms.
+
+The reactions added after that measurement were budgeted against it. These numbers were taken
+by hand rather than by the harness: the per tick figures by running the two functions three
+hundred thousand times each and dividing, the bus read by timing the process tree against a
+baseline of node starting up. Watching the cursor for a
+shake and choosing where to walk cost 0.87 microseconds per tick between them, which is 0.003
+percent of a core and does not move the number. Watching for music is the only real addition:
+one read of the session bus costs about 7 ms of CPU, and at one read every six seconds that is
+0.12 percent of a core, roughly doubling what the app costs while it is switched on. That is why
+the interval is six seconds rather than four, and why the setting can be turned off.
 
 ### Tested environments
 

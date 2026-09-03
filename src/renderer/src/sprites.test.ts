@@ -41,6 +41,34 @@ function withTags(tags: AsepriteJson['meta']['frameTags']): AsepriteJson {
 }
 
 describe('parseSheet', () => {
+  it('borrows a pose a sheet does not declare', () => {
+    // The fixture has no dance, pet or startle tag, which is the shape of every sheet drawn
+    // before those poses existed and of a hand drawn mascot that only covers a few poses.
+    const sheet = parseSheet(json);
+    expect(sheet.animations.dance).toEqual(sheet.animations.idle);
+    expect(sheet.animations.pet).toEqual(sheet.animations.idle);
+    expect(sheet.animations.startle).toEqual(sheet.animations.alert);
+  });
+
+  it('prefers a declared pose over the one it would borrow', () => {
+    const sheet = parseSheet(
+      withTags([...json.meta.frameTags, { name: 'dance', from: 3, to: 4, direction: 'forward' }]),
+    );
+    expect(sheet.animations.dance).toHaveLength(2);
+    expect(sheet.animations.dance).not.toEqual(sheet.animations.idle);
+  });
+
+  it('refuses a sheet missing one of the poses every sheet has to draw', () => {
+    // Only the seven original poses are required. A sheet without one of them is broken, and
+    // there is deliberately nothing for it to borrow, unlike the three added later.
+    for (const pose of ['idle', 'walk', 'sit', 'sleep', 'alert', 'drag', 'celebrate']) {
+      const without = json.meta.frameTags.filter((t) => t.name !== pose);
+      expect(() => parseSheet(withTags(without))).toThrow(
+        new RegExp(`no frame tag "${pose}"`, 'i'),
+      );
+    }
+  });
+
   it('groups frames per pose tag', () => {
     const sheet = parseSheet(json);
     expect(sheet.animations.idle).toEqual([

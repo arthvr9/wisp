@@ -1,4 +1,5 @@
-export type Pose = 'idle' | 'walk' | 'sit' | 'sleep' | 'alert' | 'drag' | 'celebrate';
+export type Pose =
+  'idle' | 'walk' | 'sit' | 'sleep' | 'alert' | 'drag' | 'celebrate' | 'dance' | 'pet' | 'startle';
 export type Facing = 'left' | 'right';
 
 import type { Expression } from './mood';

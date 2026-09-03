@@ -24,6 +24,13 @@ export interface StepOptions {
 }
 
 export const WALK_ACCEL_PX_S2 = 240;
+export const GRAVITY_PX_S2 = 2400;
+export const TERMINAL_PX_S = 1500;
+export const BOUNCE_DAMPING = 0.45;
+export const BOUNCE_FRICTION = 0.6;
+export const BOUNCE_MIN_PX_S = 220;
+export const MAX_BOUNCES = 2;
+export const FLING_HARD_PX_S = 700;
 
 const EDGE_TOLERANCE = 2;
 
@@ -162,4 +169,73 @@ export function walk(
   const dt = Math.max(dtMs, 0) / 1000;
   const vx = ease(state.vx, goalVx, dt);
   return step({ ...state, vx }, target, dtMs, options);
+}
+
+export interface Flight {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  displayId: number;
+  bounces: number;
+}
+
+export interface FlightStep {
+  flight: Flight;
+  contact: boolean;
+  impact: number;
+  resting: boolean;
+}
+
+// One step of a thrown mascot: gravity on the vertical, the ordinary walk rules on the
+// horizontal, and a damped bounce on contact. Every bounce spends one of maxBounces and loses
+// speed, so the flight always ends on the ground after a bounded number of steps.
+export function fly(
+  flight: Flight,
+  target: Target,
+  dtMs: number,
+  maxBounces: number = MAX_BOUNCES,
+): FlightStep {
+  const dt = Math.max(dtMs, 0) / 1000;
+  const vy = Math.min(flight.vy + GRAVITY_PX_S2 * dt, TERMINAL_PX_S);
+  const moved = step(
+    { x: flight.x, y: flight.y, vx: flight.vx, displayId: flight.displayId },
+    target,
+    dtMs,
+  );
+  const display = currentDisplay(moved, target.displays);
+  const floor = groundY(display, target.height);
+  const ceiling = display.y;
+  const y = moved.y + vy * dt;
+
+  if (y <= ceiling) {
+    const stopped = { ...moved, y: ceiling, vy: Math.max(vy, 0), bounces: flight.bounces };
+    return { flight: stopped, contact: false, impact: 0, resting: false };
+  }
+  if (y < floor) {
+    return {
+      flight: { ...moved, y, vy, bounces: flight.bounces },
+      contact: false,
+      impact: 0,
+      resting: false,
+    };
+  }
+
+  const impact = Math.abs(vy);
+  if (impact >= BOUNCE_MIN_PX_S && flight.bounces < maxBounces) {
+    const bounced = {
+      ...moved,
+      y: floor,
+      vx: moved.vx * BOUNCE_FRICTION,
+      vy: -impact * BOUNCE_DAMPING,
+      bounces: flight.bounces + 1,
+    };
+    return { flight: bounced, contact: true, impact, resting: false };
+  }
+  return {
+    flight: { ...moved, y: floor, vx: 0, vy: 0, bounces: 0 },
+    contact: true,
+    impact,
+    resting: true,
+  };
 }

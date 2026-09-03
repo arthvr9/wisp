@@ -1,3 +1,5 @@
+import { loadPage } from './load';
+import type { Theme } from './load';
 import { BrowserWindow, nativeImage } from 'electron';
 import { join } from 'node:path';
 
@@ -5,7 +7,11 @@ import type { MascotName } from '../../shared/mascots';
 
 let current: BrowserWindow | undefined;
 
-export function openSettings(appPath: string, mascot: MascotName = 'wisp'): BrowserWindow {
+export function openSettings(
+  appPath: string,
+  theme: Theme,
+  mascot: MascotName = 'wisp',
+): BrowserWindow {
   if (current && !current.isDestroyed()) {
     current.show();
     current.focus();
@@ -27,12 +33,7 @@ export function openSettings(appPath: string, mascot: MascotName = 'wisp'): Brow
       sandbox: true,
     },
   });
-  const devUrl = process.env.ELECTRON_RENDERER_URL;
-  if (devUrl) {
-    void win.loadURL(`${devUrl}/settings.html`);
-  } else {
-    void win.loadFile(join(__dirname, '../renderer/settings.html'));
-  }
+  loadPage(win, 'settings.html', theme);
   win.once('ready-to-show', () => {
     win.show();
   });
