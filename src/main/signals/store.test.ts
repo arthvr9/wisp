@@ -225,4 +225,33 @@ describe('completed tasks', () => {
     expect(store.replaceAll('clickup', [closed], 3).completed).toHaveLength(0);
     store.close();
   });
+
+  it('marks a signal closed directly, without waiting for a sync', () => {
+    const store = new SignalStore(':memory:');
+    store.replaceAll('clickup', [sig('a', 1000)], 10);
+    expect(store.list()).toHaveLength(1);
+    store.markClosed('clickup:a', 20);
+    expect(store.list()).toHaveLength(0);
+    store.close();
+  });
+});
+
+describe('meeting payload', () => {
+  it('survives a round trip through the database', () => {
+    const store = new SignalStore(':memory:');
+    const meeting: Signal = {
+      id: 'outlook:m1',
+      source: 'outlook',
+      kind: 'meeting',
+      title: 'Standup',
+      dueAt: 1000,
+      url: 'https://outlook',
+      status: 'accepted',
+      listName: 'Calendar',
+      meeting: { endsAt: 2000, accepted: true, allDay: false, organizer: 'a@b.c', busy: true },
+    };
+    store.replaceAll('outlook', [meeting], 1);
+    expect(store.list('outlook')[0]?.meeting).toEqual(meeting.meeting);
+    store.close();
+  });
 });

@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { flushCelebration, initialCelebration, noteCompleted } from '../brain/celebrate';
 import type { CelebrationState } from '../brain/celebrate';
+import { dayItems } from '../brain/day';
 import {
   initialMood,
   moodBudget,
@@ -14,6 +15,7 @@ import {
 import type { MoodState } from '../brain/mood';
 import { decideNudges } from '../brain/nudge';
 import type { NudgeDecision } from '../brain/nudge';
+import { DAY_MS, localDayStart } from '../brain/silence';
 import type { SecretStore } from '../mcp';
 import { NeedsAuthorizationError } from '../mcp';
 import { nextDelayMs, Scheduler, SignalStore } from '../signals';
@@ -22,12 +24,18 @@ import type { Nudge, NudgeBudget, SilenceWindow } from '../../shared/nudges';
 import { SIGNAL_SOURCES } from '../../shared/signals';
 import type {
   ConnectionState,
+  DayItem,
   Signal,
+  SignalAction,
   SignalSource,
   SignalsStatus,
   SilenceStatus,
 } from '../../shared/signals';
 import type { Connector } from './types';
+
+// One hour of quiet is long enough to be worth a dedicated action, short enough that a
+// snoozed item is back the same day rather than forgotten.
+const SNOOZE_MS = 60 * 60_000;
 
 export interface ConnectorHubOptions {
   connectors: Connector[];
@@ -43,6 +51,9 @@ export interface ConnectorHubOptions {
   onNudges: (nudges: Nudge[]) => void;
   onMood: (mood: Mood) => void;
   onCelebration: (celebration: Celebration) => void;
+  openExternal: (url: string) => Promise<void> | void;
+  /** Fired whenever the day list can have changed: after a sync, and after any action. */
+  onDay: (items: DayItem[]) => void;
 }
 
 function messageOf(err: unknown): string {
@@ -111,6 +122,32 @@ export class ConnectorHub {
     return this.store.list();
   }
 
+  day(nowMs: number): DayItem[] {
+    const tzOffsetMinutes = new Date(nowMs).getTimezoneOffset();
+    const endOfDayMs = localDayStart(nowMs, tzOffsetMinutes) + DAY_MS;
+    return dayItems(this.store.list(), {
+      nowMs,
+      endOfDayMs,
+      snoozedUntil: (signalId) => this.store.snoozedUntil(signalId, nowMs),
+      canComplete: (source) => this.canComplete(source),
+    });
+  }
+
+  async runAction(signalId: string, action: SignalAction, nowMs: number): Promise<void> {
+    switch (action) {
+      case 'open':
+        await this.runOpen(signalId);
+        break;
+      case 'snooze':
+        this.store.snooze(signalId, nowMs + SNOOZE_MS);
+        break;
+      case 'complete':
+        await this.runComplete(signalId, nowMs);
+        break;
+    }
+    this.opts.onDay(this.day(nowMs));
+  }
+
   async connect(source: SignalSource): Promise<SignalsStatus> {
     const connector = this.connectorFor(source);
     this.state[source] = { state: 'authorizing' };
@@ -151,9 +188,12 @@ export class ConnectorHub {
   decide(nowMs: number): NudgeDecision {
     this.tickMood(nowMs);
     const signals = this.store.list();
+    // A snoozed signal is filtered out of the candidates entirely, so every rule stops firing
+    // on it for the duration rather than one rule at a time being silenced.
+    const candidates = signals.filter((s) => this.store.snoozedUntil(s.id, nowMs) === undefined);
     const extraSilence = this.opts.extraSilence ?? (() => []);
     const decision = decideNudges({
-      signals,
+      signals: candidates,
       nowMs,
       history: this.store.nudgeHistory(nowMs),
       silence: [...this.opts.silence(nowMs), ...extraSilence(signals)],
@@ -228,6 +268,39 @@ export class ConnectorHub {
     return connector;
   }
 
+  private canComplete(source: SignalSource): boolean {
+    return this.opts.connectors.some((c) => c.source === source && c.complete !== undefined);
+  }
+
+  private findSignal(signalId: string): Signal | undefined {
+    return this.store.list().find((s) => s.id === signalId);
+  }
+
+  private async runOpen(signalId: string): Promise<void> {
+    const signal = this.findSignal(signalId);
+    if (signal === undefined) throw new Error(`unknown signal: ${signalId}`);
+    if (signal.url.trim() === '') throw new Error(`signal ${signalId} has no url to open`);
+    await this.opts.openExternal(signal.url);
+  }
+
+  private async runComplete(signalId: string, nowMs: number): Promise<void> {
+    const signal = this.findSignal(signalId);
+    if (signal === undefined) throw new Error(`unknown signal: ${signalId}`);
+    const connector = this.opts.connectors.find((c) => c.source === signal.source);
+    if (connector?.complete === undefined) {
+      throw new Error(`${signal.source} does not support marking items complete`);
+    }
+    await connector.complete(signalId);
+    this.store.markClosed(signalId, nowMs);
+    // Mirrors what a completion discovered by the next sync does, so the mascot celebrates
+    // the same way whether the user finished the task here or in the source app.
+    this.celebration = noteCompleted(this.celebration, [{ title: signal.title, at: nowMs }]);
+    this.pushMoodEvents(
+      [{ kind: nowMs > signal.dueAt ? 'task-done-late' : 'task-done', at: nowMs }],
+      nowMs,
+    );
+  }
+
   private async sync(): Promise<void> {
     const now = Date.now();
     const completed: { title: string; at: number }[] = [];
@@ -284,6 +357,7 @@ export class ConnectorHub {
     if (moodEvents.length > 0) this.pushMoodEvents(moodEvents, now);
     this.publish();
     this.opts.onNudges(this.decide(now).nudges);
+    this.opts.onDay(this.day(now));
   }
 
   publishStatus(): void {

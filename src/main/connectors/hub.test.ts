@@ -1,0 +1,177 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { ConnectorHubOptions } from './hub';
+import { ConnectorHub } from './hub';
+import type { Connector } from './types';
+import { SecretStore } from '../mcp';
+import type { Signal, SignalSource } from '../../shared/signals';
+
+// ConnectorHub reaches for app.getPath('userData') to place its sqlite file, so the module is
+// mocked here rather than pulling in real Electron for a unit test. vi.mock calls are hoisted
+// above these imports by the test runner, so this only needs to run before the mock is used.
+let userDataDir = '';
+vi.mock('electron', () => ({
+  app: { getPath: () => userDataDir },
+}));
+
+function taskSig(id: string, dueAt: number, overrides: Partial<Signal> = {}): Signal {
+  return {
+    id: `clickup:${id}`,
+    source: 'clickup',
+    kind: 'task-due',
+    title: `Task ${id}`,
+    dueAt,
+    url: `https://app.clickup.com/t/${id}`,
+    status: 'to do',
+    listName: 'Inbox',
+    ...overrides,
+  };
+}
+
+function meetingSig(id: string, dueAt: number, overrides: Partial<Signal> = {}): Signal {
+  return {
+    id: `outlook:${id}`,
+    source: 'outlook',
+    kind: 'meeting',
+    title: `Meeting ${id}`,
+    dueAt,
+    url: `https://outlook.office.com/calendar/item/${id}`,
+    status: 'confirmed',
+    listName: 'Calendar',
+    meeting: {
+      endsAt: dueAt + 30 * 60_000,
+      accepted: true,
+      allDay: false,
+      organizer: 'boss@example.com',
+      busy: true,
+    },
+    ...overrides,
+  };
+}
+
+function fakeConnector(source: SignalSource, overrides: Partial<Connector> = {}): Connector {
+  return {
+    source,
+    hasCredentials: () => true,
+    connect: () => Promise.resolve(),
+    disconnect: () => Promise.resolve(),
+    fetch: () => Promise.resolve([]),
+    close: () => Promise.resolve(),
+    ...overrides,
+  };
+}
+
+function fakeSecrets(): SecretStore {
+  return new SecretStore(
+    {
+      isEncryptionAvailable: () => true,
+      encryptString: (plain: string) => Buffer.from(plain, 'utf8'),
+      decryptString: (encrypted: Buffer) => encrypted.toString('utf8'),
+    },
+    mkdtempSync(join(tmpdir(), 'wisp-secrets-')),
+  );
+}
+
+function makeHub(
+  connectors: Connector[],
+  overrides: Partial<ConnectorHubOptions> = {},
+): ConnectorHub {
+  return new ConnectorHub({
+    connectors,
+    secrets: fakeSecrets(),
+    pollMinutes: () => 5,
+    dueSoonMinutes: () => 30,
+    meetingWarnMs: () => 15 * 60_000,
+    budget: () => ({ maxPerHour: 10, maxPerDay: 10 }),
+    silence: () => [],
+    silenceStatus: () => ({}),
+    onStatus: vi.fn(),
+    onNudges: vi.fn(),
+    onMood: vi.fn(),
+    onCelebration: vi.fn(),
+    openExternal: vi.fn(),
+    onDay: vi.fn(),
+    ...overrides,
+  });
+}
+
+describe('ConnectorHub', () => {
+  let hub: ConnectorHub | undefined;
+
+  beforeEach(() => {
+    userDataDir = mkdtempSync(join(tmpdir(), 'wisp-hub-'));
+  });
+
+  afterEach(() => {
+    hub?.close();
+    hub = undefined;
+    rmSync(userDataDir, { recursive: true, force: true });
+  });
+
+  it('completes a task through its connector and marks it closed in the store', async () => {
+    const now = Date.now();
+    const task = taskSig('a', now + 60 * 60_000);
+    const complete = vi.fn(() => Promise.resolve());
+    const clickup = fakeConnector('clickup', { fetch: () => Promise.resolve([task]), complete });
+    hub = makeHub([clickup]);
+    hub.start();
+    await hub.syncNow();
+    expect(hub.signals().map((s) => s.id)).toContain('clickup:a');
+
+    await hub.runAction('clickup:a', 'complete', now);
+
+    expect(complete).toHaveBeenCalledWith('clickup:a');
+    expect(hub.signals().map((s) => s.id)).not.toContain('clickup:a');
+  });
+
+  it('throws when completing a signal whose source cannot write', async () => {
+    const now = Date.now();
+    const meeting = meetingSig('a', now + 60 * 60_000);
+    const outlook = fakeConnector('outlook', { fetch: () => Promise.resolve([meeting]) });
+    hub = makeHub([outlook]);
+    hub.start();
+    await hub.syncNow();
+
+    await expect(hub.runAction('outlook:a', 'complete', now)).rejects.toThrow();
+  });
+
+  it('silences the next decision for a snoozed signal', async () => {
+    const now = Date.now();
+    const overdueTask = taskSig('a', now - 2 * 60_000);
+    const clickup = fakeConnector('clickup', { fetch: () => Promise.resolve([overdueTask]) });
+    hub = makeHub([clickup]);
+    hub.start();
+    await hub.syncNow();
+
+    const before = hub.decide(now);
+    expect(before.nudges.some((n) => n.signalId === 'clickup:a')).toBe(true);
+
+    await hub.runAction('clickup:a', 'snooze', now);
+
+    const after = hub.decide(now);
+    expect(after.nudges.some((n) => n.signalId === 'clickup:a')).toBe(false);
+  });
+
+  it('passes the signal url to openExternal on open', async () => {
+    const now = Date.now();
+    const task = taskSig('a', now + 60 * 60_000);
+    const clickup = fakeConnector('clickup', { fetch: () => Promise.resolve([task]) });
+    const openExternal = vi.fn(() => Promise.resolve());
+    hub = makeHub([clickup], { openExternal });
+    hub.start();
+    await hub.syncNow();
+
+    await hub.runAction('clickup:a', 'open', now);
+
+    expect(openExternal).toHaveBeenCalledWith(task.url);
+  });
+
+  it('throws when opening an unknown signal', async () => {
+    hub = makeHub([fakeConnector('clickup')]);
+    await expect(hub.runAction('clickup:missing', 'open', Date.now())).rejects.toThrow();
+  });
+});

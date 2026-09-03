@@ -99,6 +99,15 @@ transparent, non-focusable X11 window (through XWayland) that moves itself with 
 - A meeting produces at most two things: a nudge before it starts and a `SilenceWindow` while
   it runs. Anything else about meetings belongs in the brain, not in the connector.
 
+## Phase 6 shape
+
+- Writing to a work tool always goes through main and always after a confirmation the user
+  gave in the panel. Never add a one click path to a write.
+- A connector that cannot write simply does not implement `complete`. The panel asks the hub,
+  the hub asks the connector, and the row hides the action. No source names in the UI logic.
+- The store keeps the meeting payload as JSON in one column. It is read back whole, never
+  queried by its fields.
+
 ## Phase 0 findings worth remembering
 
 - `focusable: false` makes Chromium create an override-redirect X window. Mutter does not

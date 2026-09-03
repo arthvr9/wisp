@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { SQLOutputValue } from 'node:sqlite';
 
 import type { NudgeKind, NudgeRecord } from '../../shared/nudges';
-import type { Signal, SignalKind, SignalSource } from '../../shared/signals';
+import type { Meeting, Signal, SignalKind, SignalSource } from '../../shared/signals';
 
 export interface Diff {
   added: Signal[];
@@ -22,6 +22,7 @@ interface Row {
   listName: string;
   gone: boolean;
   closedAt: number | undefined;
+  meeting: Meeting | undefined;
 }
 
 // Long enough for the 14 day overdue escalation to see its own past, short enough that the
@@ -44,7 +45,8 @@ CREATE TABLE IF NOT EXISTS signals (
   first_seen INTEGER NOT NULL,
   last_seen INTEGER NOT NULL,
   gone_at INTEGER NULL,
-  closed_at INTEGER NULL
+  closed_at INTEGER NULL,
+  meeting TEXT NULL
 );
 CREATE TABLE IF NOT EXISTS nudges (
   signal_id TEXT NOT NULL,
@@ -84,7 +86,29 @@ function toRow(r: Record<string, SQLOutputValue>): Row {
     listName: text(r.list_name),
     gone: r.gone_at !== null && r.gone_at !== undefined,
     closedAt: r.closed_at === null || r.closed_at === undefined ? undefined : int(r.closed_at),
+    meeting: parseMeeting(r.meeting),
   };
+}
+
+// The meeting payload has no fixed columns of its own: it is only ever read back whole, and a
+// second source of meetings would bring different fields.
+function parseMeeting(value: SQLOutputValue | undefined): Meeting | undefined {
+  if (typeof value !== 'string' || value.length === 0) return undefined;
+  try {
+    const raw: unknown = JSON.parse(value);
+    if (typeof raw !== 'object' || raw === null) return undefined;
+    const m = raw as Record<string, unknown>;
+    if (typeof m.endsAt !== 'number') return undefined;
+    return {
+      endsAt: m.endsAt,
+      accepted: m.accepted === true,
+      allDay: m.allDay === true,
+      organizer: typeof m.organizer === 'string' ? m.organizer : '',
+      busy: m.busy === true,
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 function toSignal(r: Row): Signal {
@@ -98,6 +122,7 @@ function toSignal(r: Row): Signal {
     status: r.status,
     listName: r.listName,
     ...(r.closedAt === undefined ? {} : { closedAt: r.closedAt }),
+    ...(r.meeting === undefined ? {} : { meeting: r.meeting }),
   };
 }
 
@@ -133,8 +158,8 @@ export class SignalStore {
 
     const upsert = this.db.prepare(
       `INSERT INTO signals
-         (id, source, kind, title, due_at, url, status, list_name, first_seen, last_seen, gone_at, closed_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+         (id, source, kind, title, due_at, url, status, list_name, first_seen, last_seen, gone_at, closed_at, meeting)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          kind = excluded.kind,
          title = excluded.title,
@@ -144,7 +169,8 @@ export class SignalStore {
          list_name = excluded.list_name,
          last_seen = excluded.last_seen,
          gone_at = NULL,
-         closed_at = excluded.closed_at`,
+         closed_at = excluded.closed_at,
+         meeting = excluded.meeting`,
     );
     const markGone = this.db.prepare(
       'UPDATE signals SET gone_at = ? WHERE id = ? AND gone_at IS NULL',
@@ -171,6 +197,7 @@ export class SignalStore {
           nowMs,
           nowMs,
           s.closedAt ?? null,
+          s.meeting === undefined ? null : JSON.stringify(s.meeting),
         );
         const open = s.closedAt === undefined;
         const wasOpen = before !== undefined && !before.gone && before.closedAt === undefined;
@@ -212,6 +239,12 @@ export class SignalStore {
             )
             .all(source);
     return rows.map((r) => toSignal(toRow(r)));
+  }
+
+  // Lets an action mark a signal done right away, instead of waiting for the next sync to see
+  // the source's own record of the completion.
+  markClosed(signalId: string, closedAtMs: number): void {
+    this.db.prepare('UPDATE signals SET closed_at = ? WHERE id = ?').run(closedAtMs, signalId);
   }
 
   recordNudge(record: NudgeRecord): void {

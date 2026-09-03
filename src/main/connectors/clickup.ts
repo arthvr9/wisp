@@ -63,7 +63,7 @@ export function createClickUpConnector(opts: ClickUpConnectorOptions): Connector
         await host.callTool(updateTask, { task_id: taskIdOf(signalId), status: 'complete' });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        throw new Error(`Could not mark the ClickUp task complete: ${message}`);
+        throw new Error(`Could not mark the ClickUp task complete: ${message}`, { cause: err });
       }
     },
 

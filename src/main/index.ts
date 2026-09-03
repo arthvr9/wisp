@@ -468,6 +468,9 @@ void app.whenReady().then(async () => {
       bubbleUntil = Date.now() + 4000;
       actor = reduce(actor, { type: 'alert', ms: 4000 }, target);
     });
+    at(4800, () => {
+      togglePanel();
+    });
     at(5000, () => {
       const w = openSettings(appPath);
       w.webContents.once('did-finish-load', () => {
@@ -479,10 +482,12 @@ void app.whenReady().then(async () => {
               w.webContents.capturePage(),
               stage.win.webContents.capturePage(),
               bubble.capture(),
-            ]).then(([settingsShot, mascotShot, bubbleShot]) => {
+              panel.capture(),
+            ]).then(([settingsShot, mascotShot, bubbleShot, panelShot]) => {
               writeFileSync(join(dir, 'settings.png'), settingsShot.toPNG());
               writeFileSync(join(dir, 'mascot.png'), mascotShot.toPNG());
               writeFileSync(join(dir, 'bubble.png'), bubbleShot.toPNG());
+              writeFileSync(join(dir, 'panel.png'), panelShot.toPNG());
               w.close();
             });
           } else {

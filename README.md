@@ -125,6 +125,42 @@ Two things follow from a meeting. A warning a few minutes before it starts, and 
 it runs: an accepted, busy, not all day meeting becomes a `SilenceWindow` from a minute before
 the start to the end. Urgent still passes, so a task due right now reaches you anyway.
 
+## Gruply Teams
+
+The third source is a company platform with a plain REST API and a bearer token, no OAuth and
+no MCP. It exists to test the abstraction with a number rather than a claim. Adding it cost an
+adapter directory, one connector file, and four registrations: the source union, the config
+shape, an export and the line that builds it. The hub did not change.
+
+The API has no global task endpoint and no current user endpoint, so the connector walks the
+active projects and filters by the email in settings. That is about twenty three requests per
+sync today. It is capped at forty projects with four requests in flight, and the per source
+backoff covers a rate limit.
+
+The API key belongs to a company, not to a person, so treat it as sensitive. Running from
+source it can come from `WISP_GRUPLY_TOKEN` in a local `.env`, which is gitignored, and a key
+pasted in settings goes to safeStorage and wins over the environment. The key is never written
+to a log or an error message, and a test checks that.
+
+`src/main/gruply/live.test.ts` runs against the real API only when a key and an email are in
+the environment, so the suite stays offline by default.
+
+## The panel
+
+A left click on the mascot that is not a drag opens a panel with what is due today: overdue
+items first, then by time. Each row offers Open, which sends you to the item in its own app,
+and Snooze, which quiets it for an hour. A row from a source that can write also offers Done,
+which asks for confirmation in the row itself before anything is sent. Writing to a work tool
+is expensive to get wrong, so there is no one click completion.
+
+Completing from the panel marks the item closed straight away, so the list updates without
+waiting for the next sync, and the mascot celebrates exactly as it would have if you had
+finished the task in the source app.
+
+Only ClickUp can be written to today. Outlook is read only by design, and the Gruply task
+update endpoint is documented but its body shape is not, so that connector reads only until it
+is confirmed.
+
 ## Nudges
 
 `src/main/brain/nudge.ts` decides what deserves a bubble, from the cached signals, the history
@@ -238,11 +274,12 @@ src/main/stage/              the only place that calls setBounds, setShape, setA
 src/main/mcp/                MCP client host, OAuth PKCE loopback provider, encrypted secrets
 src/main/connectors/         the Connector interface, the ClickUp and Outlook connectors, the hub
 src/main/graph/              Microsoft Graph auth, client and calendar adapter
+src/main/gruply/             Gruply Teams client and task adapter
 src/main/signals/            SQLite cache with diff, scheduler with backoff, ClickUp adapter
 src/main/speech/             prompt, sanitizer, provider adapters, Ollama detection
 src/main/voice/              the interface the app sees, and its lazy implementation
 src/main/harness/            environment report, metrics, CSV, system sampler
-src/renderer/                React: mascot canvas, bubble, settings
+src/renderer/                React: mascot canvas, bubble, day panel, settings
 src/shared/                  poses, config shape, IPC channels, i18n
 resources/                   sprite sheet, Aseprite metadata, tray icons
 scripts/                     placeholder sprite generator, README image generator

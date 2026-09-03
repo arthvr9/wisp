@@ -10,6 +10,11 @@ import type { Frame } from './sprites';
 const SIZE = 96;
 const sheet = parseSheet(sheetJson);
 
+// A left click that neither moved far nor took long opens the panel instead of being read as
+// the start of a drag.
+const CLICK_MAX_DISTANCE = 4;
+const CLICK_MAX_DURATION_MS = 400;
+
 const GOLD = '#facc15';
 const GOLD_DARK = '#ca8a04';
 const SPARKLE = '#fef3c7';
@@ -55,8 +60,15 @@ function drawFrame(
   ctx.drawImage(image, frame.x, frame.y, frame.w, frame.h, dx * scale, dy * scale, SIZE, SIZE);
 }
 
+interface PointerDown {
+  x: number;
+  y: number;
+  time: number;
+}
+
 export function Mascot() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const downRef = useRef<PointerDown | null>(null);
   const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
@@ -137,6 +149,7 @@ export function Mascot() {
 
   function onPointerDown(e: PointerEvent<HTMLCanvasElement>) {
     if (e.button !== 0) return;
+    downRef.current = { x: e.clientX, y: e.clientY, time: performance.now() };
     e.currentTarget.setPointerCapture(e.pointerId);
     setDragging(true);
     window.wisp.dragStart({ offsetX: e.clientX, offsetY: e.clientY });
@@ -147,6 +160,15 @@ export function Mascot() {
     e.currentTarget.releasePointerCapture(e.pointerId);
     setDragging(false);
     window.wisp.dragEnd();
+
+    const down = downRef.current;
+    downRef.current = null;
+    if (!down || e.type !== 'pointerup') return;
+    const distance = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+    const duration = performance.now() - down.time;
+    if (distance <= CLICK_MAX_DISTANCE && duration < CLICK_MAX_DURATION_MS) {
+      window.wisp.togglePanel();
+    }
   }
 
   function onContextMenu(e: MouseEvent<HTMLCanvasElement>) {
