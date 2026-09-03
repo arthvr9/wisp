@@ -112,8 +112,8 @@ describe('createCalendarConnector', () => {
       vevent({
         UID: 'daily@example.com',
         SUMMARY: 'Standup',
-        DTSTART: '20260902T130000Z',
-        DTEND: '20260902T133000Z',
+        DTSTART: '20260902T110000Z',
+        DTEND: '20260902T113000Z',
         RRULE: 'FREQ=DAILY',
       }),
     );
@@ -124,8 +124,8 @@ describe('createCalendarConnector', () => {
     const signals = await connector.fetch(now);
     expect(signals).toHaveLength(2);
     expect(signals.map((s) => s.dueAt)).toEqual([
-      Date.UTC(2026, 8, 2, 13, 0, 0),
-      Date.UTC(2026, 8, 3, 13, 0, 0),
+      Date.UTC(2026, 8, 2, 11, 0, 0),
+      Date.UTC(2026, 8, 3, 11, 0, 0),
     ]);
   });
 
