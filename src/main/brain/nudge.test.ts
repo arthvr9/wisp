@@ -248,9 +248,9 @@ describe('decideNudges meeting rules', () => {
 
   it('skips a meeting that was declined or never answered', () => {
     expect(kinds({ signals: [meetingSig('a', now, { accepted: false })] })).toEqual([]);
-    expect(
-      kinds({ signals: [meetingSig('a', now + 5 * minute, { accepted: false })] }),
-    ).toEqual([]);
+    expect(kinds({ signals: [meetingSig('a', now + 5 * minute, { accepted: false })] })).toEqual(
+      [],
+    );
   });
 
   it('still warns for a meeting marked free rather than busy', () => {
