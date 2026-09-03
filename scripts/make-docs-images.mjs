@@ -171,17 +171,40 @@ function blit(target, source, dx, dy, scale = 1, crop) {
 
 const sheet = decodePng(readFileSync(join(root, 'resources', 'sprites', 'wisp.png')));
 
-// The sheet is a fixed grid of 32 pixel cells, four per row, in the frame order the
-// generator writes. Reading the JSON would need a schema for one number pair.
-const COLUMNS = 4;
+/** @typedef {{ x: number; y: number; w: number; h: number }} Rect */
+
+// Frame rectangles come from the sheet's own JSON. Computing them from a fixed grid was wrong
+// once a pose could start on a new row: half the strip came out empty.
+/** @param {string} mascot */
+function framesOf(mascot) {
+  const text = readFileSync(join(root, 'resources', 'sprites', `${mascot}.json`), 'utf8');
+  /** @type {unknown} */
+  const parsed = JSON.parse(text);
+  if (typeof parsed !== 'object' || parsed === null) throw new Error(`Bad sheet JSON: ${mascot}`);
+  const frames = /** @type {{ frames?: unknown }} */ (parsed).frames;
+  if (typeof frames !== 'object' || frames === null) throw new Error(`No frames: ${mascot}`);
+  /** @type {Rect[]} */
+  const out = [];
+  const entries = /** @type {Record<string, { frame?: unknown }>} */ (frames);
+  for (const entry of Object.values(entries)) {
+    const rect = entry.frame;
+    if (typeof rect !== 'object' || rect === null) continue;
+    const r = /** @type {Record<string, unknown>} */ (rect);
+    if (typeof r.x !== 'number' || typeof r.y !== 'number') continue;
+    if (typeof r.w !== 'number' || typeof r.h !== 'number') continue;
+    out.push({ x: r.x, y: r.y, w: r.w, h: r.h });
+  }
+  return out;
+}
+
+const wispFrames = framesOf('wisp');
 
 /** @param {number} index */
-const cell = (index) => ({
-  x: (index % COLUMNS) * FRAME,
-  y: Math.floor(index / COLUMNS) * FRAME,
-  w: FRAME,
-  h: FRAME,
-});
+const cell = (index) => {
+  const rect = wispFrames[index];
+  if (!rect) throw new Error(`Frame ${index} is missing from the wisp sheet.`);
+  return rect;
+};
 
 const outDir = join(root, 'docs', 'images');
 mkdirSync(outDir, { recursive: true });
@@ -220,7 +243,14 @@ MASCOTS.forEach((mascot, column) => {
   const mascotSheet = decodePng(
     readFileSync(join(root, 'resources', 'sprites', `${mascot.id}.png`)),
   );
-  blit(mascotStrip, mascotSheet, column * (mascotCell + gap), 0, mascotScale, cell(0));
+  blit(
+    mascotStrip,
+    mascotSheet,
+    column * (mascotCell + gap),
+    0,
+    mascotScale,
+    framesOf(mascot.id)[0] ?? cell(0),
+  );
 });
 writeFileSync(join(outDir, 'mascots.png'), encodePng(mascotStrip));
 

@@ -1,0 +1,132 @@
+name: Release
+
+# Cut a release by pushing a tag, or by running this workflow by hand against a tag that already
+# exists. Nothing here needs a secret: GITHUB_TOKEN is provided by Actions.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build, for example v0.1.0'
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  # Both platforms are packaged on a clean runner. No cross compilation: the Windows installer is
+  # built on Windows, the AppImage and the deb on Linux.
+  #
+  # Nothing is signed. An unsigned AppImage runs as it is. An unsigned deb installs, with a warning
+  # from the package tools about an unverified origin. An unsigned Windows installer triggers
+  # SmartScreen ("Windows protected your PC"), and on Windows an OV certificate no longer removes
+  # that: only an EV certificate does. The project has no certificate, so there is nothing to
+  # configure here, and adding signing later means adding a secret and a step, not changing this
+  # build.
+  package:
+    name: Package ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      # The Windows build has never been run by a human. It must not be able to hold up the Linux
+      # release, which is the only artifact this project actually ships.
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            os: ubuntu-latest
+            script: package:linux
+            artifacts: |
+              dist/*.AppImage
+              dist/*.deb
+          - platform: windows
+            os: windows-latest
+            script: package:win
+            artifacts: |
+              dist/*.exe
+              dist/*.zip
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # A tag that does not match package.json would produce a release whose file names disagree
+      # with its title, so stop before building anything.
+      - name: Tag matches package.json version
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          case "$TAG" in
+            v*) ;;
+            *) echo "Tag $TAG does not start with v"; exit 1 ;;
+          esac
+          version=$(node -p 'require("./package.json").version')
+          if [ "$TAG" != "v$version" ]; then
+            echo "Tag $TAG does not match package.json version $version"
+            exit 1
+          fi
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Package
+        run: npm run ${{ matrix.script }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wisp-${{ matrix.platform }}
+          path: ${{ matrix.artifacts }}
+          if-no-files-found: error
+
+  # Only the Linux artifacts go into the GitHub Release. The app has never been run on Windows, so
+  # publishing an untested installer would hand a broken app to a stranger who found the release
+  # page. The Windows build stays a workflow artifact: the owner can download it from the run,
+  # test it, and attach it to the release by hand once it is known to work.
+  release:
+    name: Draft release with the Linux artifacts
+    needs: package
+    # Runs even if the Windows leg failed. If the Linux leg failed there is no artifact to
+    # download and this job fails too, which is the intended outcome.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: wisp-linux
+          path: linux
+
+      # gh is preinstalled on the runner, so the release is created without a third party action.
+      # Draft plus generated notes: the owner writes the description and presses publish.
+      - name: Create or update the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          ls -l linux
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" linux/* --clobber
+          else
+            gh release create "$TAG" linux/* --draft --generate-notes --title "$TAG"
+          fi

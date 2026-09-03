@@ -1,0 +1,63 @@
+appId: io.github.arthvr9.wisp
+productName: Wisp
+copyright: Copyright (c) 2026 Arthur Cardoso
+
+# Nothing publishes from the packager itself: the release workflow attaches the files, and
+# two things creating the same release would race.
+publish: null
+
+directories:
+  buildResources: build
+  output: dist
+
+# Everything the app reads at runtime and nothing else. The default pattern would also pack
+# src, docs, harness-results and .env. Production node_modules are added by electron-builder
+# on top of this list, which is why the main process can still require zod and the SDKs.
+files:
+  - out/**
+  - resources/**
+  - package.json
+
+# resources/ stays inside app.asar. Proven, not assumed: with resources/icons packed into an
+# asar, existsSync, nativeImage.createFromPath and new Tray(image) all work on those paths,
+# because Electron routes its own file reads through the asar. So no asarUnpack is needed for
+# the sprite sheet or the tray icons that tray.ts and stage/settings.ts load through
+# app.getAppPath().
+asar: true
+npmRebuild: false
+
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+  category: Utility
+  maintainer: Arthur Cardoso <arthur.cardoso@grancoffee.com.br>
+  synopsis: Desktop mascot
+  description: A desktop mascot for GNOME. The window is the character.
+  executableName: wisp
+  icon: build/icon.png
+  # Electron chooses the Ozone platform before the main script runs, so the X11 backend has to
+  # be asked for on the command line. Putting it in the desktop entry covers the normal launch
+  # and saves the app the self relaunch it would otherwise do (see src/main/index.ts).
+  executableArgs:
+    - --ozone-platform=x11
+
+# No macOS target. Nobody here can test one, and an untested target in a release is worse
+# than a missing one.
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: zip
+      arch: [x64]
+  icon: build/icon.ico
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Wisp

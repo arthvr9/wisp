@@ -54,11 +54,23 @@ import type { DragStart, EnvironmentInfo } from '../shared/ipc';
 // both still work. Electron picks the Ozone platform for the browser process before this
 // script runs, so this call alone is too late: it only reaches the GPU and renderer
 // children, and the mismatch crashes the GPU process. The flag must also be on the command
-// line (see the npm scripts). This line stays so the intent is visible next to the check.
-app.commandLine.appendSwitch('ozone-platform', 'x11');
+// line (see scripts/run-electron.mjs). This line stays so the intent is visible next to the
+// check. Off Linux there is no Ozone and nothing to force.
 const OZONE_FLAG = '--ozone-platform=x11';
-if (!process.argv.includes(OZONE_FLAG)) {
-  console.error(`warning: ${OZONE_FLAG} missing from the command line, window will not be X11`);
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('ozone-platform', 'x11');
+  if (!process.argv.includes(OZONE_FLAG)) {
+    // A packaged build is started from a desktop file or a double click, with no npm script
+    // to carry the flag, and by now the browser process has already chosen its platform. The
+    // only fix left is to start over with the flag on the command line. Passing it in the new
+    // argv is also what stops this from looping: the next process sees it and skips.
+    if (app.isPackaged) {
+      app.relaunch({ args: [...process.argv.slice(1), OZONE_FLAG] });
+      app.exit(0);
+    } else {
+      console.error(`warning: ${OZONE_FLAG} missing from the command line, window will not be X11`);
+    }
+  }
 }
 
 const TICK_MS = 33;
@@ -96,8 +108,11 @@ void app.whenReady().then(async () => {
     broadcast(IPC.speechStatusChanged, status);
   });
   const minutes = harnessMinutes();
-  const harness =
-    minutes === undefined ? undefined : new Harness(TICK_MS, join(appPath, 'harness-results'));
+  // Results go next to the source tree, where they are easy to read. In a packaged build that
+  // path is inside app.asar and mkdir fails, taking the whole startup with it, so a packaged
+  // run writes to userData instead.
+  const resultsRoot = join(app.isPackaged ? app.getPath('userData') : appPath, 'harness-results');
+  const harness = minutes === undefined ? undefined : new Harness(TICK_MS, resultsRoot);
 
   let target: Target = {
     displays: screen.getAllDisplays().map(toArea),

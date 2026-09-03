@@ -2,3 +2,4 @@ node_modules/
 out/
 harness-results/
 package-lock.json
+dist/
