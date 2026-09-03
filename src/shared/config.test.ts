@@ -41,3 +41,10 @@ describe('normalizeConfig', () => {
     expect(normalizeConfig({ name: '   ' }).name).toBe('Wisp');
   });
 });
+
+describe('mascot', () => {
+  it('keeps a known mascot and rejects an unknown one', () => {
+    expect(normalizeConfig({ mascot: 'coffee' }).mascot).toBe('coffee');
+    expect(normalizeConfig({ mascot: 'dragon' }).mascot).toBe('wisp');
+  });
+});

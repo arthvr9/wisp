@@ -27,7 +27,12 @@ const TINT_SKIP = ['eye', 'white'];
  */
 function paintBlob(canvas, cx, cy, rx, ry) {
   const { palette } = canvas;
-  paintMask(canvas, ellipseMask(cx, cy, rx, ry, canvas.width, canvas.height), palette.body, palette.outline);
+  paintMask(
+    canvas,
+    ellipseMask(cx, cy, rx, ry, canvas.width, canvas.height),
+    palette.body,
+    palette.outline,
+  );
   const hx = Math.round(cx - rx * 0.45);
   const hy = Math.round(cy - ry * 0.55);
   canvas.set(hx, hy, palette.light);
@@ -146,7 +151,10 @@ function bob(spec) {
 
 /** @type {Record<string, WispSpec[]>} */
 const FRAMES = {
-  idle: [bob({ ...base, feet: [0, 0] }), bob({ ...base, cy: 21, ry: 7, flameHeight: 5, flameLean: 3, feet: [0, 0] })],
+  idle: [
+    bob({ ...base, feet: [0, 0] }),
+    bob({ ...base, cy: 21, ry: 7, flameHeight: 5, flameLean: 3, feet: [0, 0] }),
+  ],
   walk: [
     bob({ ...base, feet: [-2, 2] }),
     bob({ ...base, cx: 16, cy: 19, feet: [0, 0] }),
@@ -158,12 +166,48 @@ const FRAMES = {
     bob({ ...base, cy: 23, rx: 10, ry: 6, flameHeight: 4, flameLean: 3, feet: [-3, 3] }),
   ],
   sleep: [
-    bob({ ...base, cy: 24, rx: 10, ry: 5, eyes: 'closed', flameHeight: 3, flameLean: 1, zAt: [24, 10] }),
-    bob({ ...base, cy: 24, rx: 10, ry: 5, eyes: 'closed', flameHeight: 3, flameLean: 2, zAt: [25, 7] }),
+    bob({
+      ...base,
+      cy: 24,
+      rx: 10,
+      ry: 5,
+      eyes: 'closed',
+      flameHeight: 3,
+      flameLean: 1,
+      zAt: [24, 10],
+    }),
+    bob({
+      ...base,
+      cy: 24,
+      rx: 10,
+      ry: 5,
+      eyes: 'closed',
+      flameHeight: 3,
+      flameLean: 2,
+      zAt: [25, 7],
+    }),
   ],
   alert: [
-    bob({ ...base, cy: 18, rx: 7, ry: 10, eyes: 'wide', flameHeight: 7, flameLean: 0, feet: [0, 0] }),
-    bob({ ...base, cy: 17, rx: 7, ry: 10, eyes: 'wide', flameHeight: 8, flameLean: 1, feet: [0, 0] }),
+    bob({
+      ...base,
+      cy: 18,
+      rx: 7,
+      ry: 10,
+      eyes: 'wide',
+      flameHeight: 7,
+      flameLean: 0,
+      feet: [0, 0],
+    }),
+    bob({
+      ...base,
+      cy: 17,
+      rx: 7,
+      ry: 10,
+      eyes: 'wide',
+      flameHeight: 8,
+      flameLean: 1,
+      feet: [0, 0],
+    }),
   ],
   // rx 7 keeps the expression overlay's eye patch inside the outline.
   drag: [
@@ -171,9 +215,36 @@ const FRAMES = {
     bob({ ...base, cx: 16, cy: 17, rx: 7, ry: 11, flameHeight: 5, flameLean: 4, feet: [1, -1] }),
   ],
   celebrate: [
-    bob({ ...base, cy: 23, rx: 9, ry: 6, eyes: 'happy', flameHeight: 4, flameLean: 2, feet: [-1, 1] }),
-    bob({ ...base, cy: 15, rx: 7, ry: 8, eyes: 'happy', flameHeight: 4, flameLean: 0, armsUp: true }),
-    bob({ ...base, cy: 21, rx: 9, ry: 7, eyes: 'happy', flameHeight: 5, flameLean: 2, feet: [-2, 2] }),
+    bob({
+      ...base,
+      cy: 23,
+      rx: 9,
+      ry: 6,
+      eyes: 'happy',
+      flameHeight: 4,
+      flameLean: 2,
+      feet: [-1, 1],
+    }),
+    bob({
+      ...base,
+      cy: 15,
+      rx: 7,
+      ry: 8,
+      eyes: 'happy',
+      flameHeight: 4,
+      flameLean: 0,
+      armsUp: true,
+    }),
+    bob({
+      ...base,
+      cy: 21,
+      rx: 9,
+      ry: 7,
+      eyes: 'happy',
+      flameHeight: 5,
+      flameLean: 2,
+      feet: [-2, 2],
+    }),
   ],
 };
 

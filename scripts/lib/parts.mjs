@@ -1,6 +1,5 @@
 // Small drawing helpers shared by every mascot: filled shapes, eyes, mouth, the sleep "z".
 // Each mascot module composes these with its own bespoke bits (steam, ears, hem, leaves, ...).
-import { Canvas } from './canvas.mjs';
 
 /** @typedef {number[]} Rgba */
 
@@ -49,7 +48,7 @@ export function roundedBoxMask(cx, cy, rx, ry, width, height) {
 
 /**
  * Fills a mask with `body`, outlining the pixels that border outside the mask with `outline`.
- * @param {Canvas} canvas
+ * @param {import('./canvas.mjs').Canvas} canvas
  * @param {Uint8Array} mask
  * @param {Rgba} body
  * @param {Rgba} outline
@@ -72,7 +71,7 @@ export function paintMask(canvas, mask, body, outline) {
 
 /**
  * Two dot eyes centred on columns cx-2..cx+5, row cy. Style controls their shape.
- * @param {Canvas} canvas
+ * @param {import('./canvas.mjs').Canvas} canvas
  * @param {number} cx
  * @param {number} cy
  * @param {'open' | 'wide' | 'half' | 'closed' | 'happy'} style
@@ -123,7 +122,7 @@ export function paintEyes(canvas, cx, cy, style, eye, white) {
 }
 
 /**
- * @param {Canvas} canvas
+ * @param {import('./canvas.mjs').Canvas} canvas
  * @param {number} cx
  * @param {number} y
  * @param {'smile' | 'flat'} shape
@@ -138,7 +137,7 @@ export function paintMouth(canvas, cx, y, shape, color) {
 }
 
 /**
- * @param {Canvas} canvas
+ * @param {import('./canvas.mjs').Canvas} canvas
  * @param {number} x
  * @param {number} y
  * @param {Rgba} color

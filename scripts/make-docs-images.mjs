@@ -1,4 +1,4 @@
-// Builds the images the README shows, out of the sprite sheet and the tray icons that
+// Builds the images the README shows, out of the sprite sheets and the tray icons that
 // scripts/make-placeholder-sprites.mjs already produced. Run after that one.
 // Run with: node scripts/make-docs-images.mjs
 import { Buffer } from 'node:buffer';
@@ -7,6 +7,8 @@ import { dirname, join } from 'node:path';
 import { argv, stdout } from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { deflateSync, inflateSync } from 'node:zlib';
+
+import { MASCOTS } from './lib/mascots/index.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const FRAME = 32;
@@ -200,7 +202,7 @@ writeFileSync(join(outDir, 'poses.png'), encodePng(strip));
 
 const moods = ['dejected', 'stressed', 'uneasy', 'calm', 'cheerful', 'elated'];
 const trays = moods.map((mood) =>
-  decodePng(readFileSync(join(root, 'resources', 'icons', `tray-${mood}.png`))),
+  decodePng(readFileSync(join(root, 'resources', 'icons', 'wisp', `tray-${mood}.png`))),
 );
 const trayScale = 4;
 const traySize = 22 * trayScale;
@@ -210,7 +212,19 @@ trays.forEach((tray, column) => {
 });
 writeFileSync(join(outDir, 'moods.png'), encodePng(ladder));
 
-stdout.write(`wrote ${outDir}/wisp.png, poses.png and moods.png\n`);
+// One idle frame per mascot, in the order the picker offers them, for a side by side look.
+const mascotScale = 4;
+const mascotCell = FRAME * mascotScale;
+const mascotStrip = blank(MASCOTS.length * (mascotCell + gap) - gap, mascotCell);
+MASCOTS.forEach((mascot, column) => {
+  const mascotSheet = decodePng(
+    readFileSync(join(root, 'resources', 'sprites', `${mascot.id}.png`)),
+  );
+  blit(mascotStrip, mascotSheet, column * (mascotCell + gap), 0, mascotScale, cell(0));
+});
+writeFileSync(join(outDir, 'mascots.png'), encodePng(mascotStrip));
+
+stdout.write(`wrote ${outDir}/wisp.png, poses.png, moods.png and mascots.png\n`);
 
 // The bubble and the mascot as they are captured from the running app, stacked the way they
 // appear on screen. Pass the two captures as arguments to refresh this one.
