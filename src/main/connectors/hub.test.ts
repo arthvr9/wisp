@@ -10,6 +10,8 @@ import type { Connector } from './types';
 import { SecretStore } from '../mcp';
 import type { Signal, SignalSource } from '../../shared/signals';
 
+const DAY_MS = 24 * 60 * 60_000;
+
 // ConnectorHub reaches for app.getPath('userData') to place its sqlite file, so the module is
 // mocked here rather than pulling in real Electron for a unit test. vi.mock calls are hoisted
 // above these imports by the test runner, so this only needs to run before the mock is used.
@@ -173,5 +175,42 @@ describe('ConnectorHub', () => {
   it('throws when opening an unknown signal', async () => {
     hub = makeHub([fakeConnector('clickup')]);
     await expect(hub.runAction('clickup:missing', 'open', Date.now())).rejects.toThrow();
+  });
+
+  it('lists every open task, weeks out included, under its own group', async () => {
+    const now = new Date(2026, 8, 2, 10, 0).getTime();
+    const tasks = [
+      taskSig('late', now - 3 * DAY_MS),
+      taskSig('today', now + 4 * 60 * 60_000),
+      taskSig('tomorrow', new Date(2026, 8, 3, 9, 0).getTime()),
+      taskSig('week', new Date(2026, 8, 7, 9, 0).getTime()),
+      taskSig('later', new Date(2026, 8, 24, 9, 0).getTime()),
+    ];
+    const clickup = fakeConnector('clickup', { fetch: () => Promise.resolve(tasks) });
+    hub = makeHub([clickup]);
+    hub.start();
+    await hub.syncNow();
+
+    const items = hub.day(now);
+    expect(items.map((i) => i.signal.id)).toEqual([
+      'clickup:late',
+      'clickup:today',
+      'clickup:tomorrow',
+      'clickup:week',
+      'clickup:later',
+    ]);
+    expect(items.map((i) => i.group)).toEqual(['late', 'today', 'tomorrow', 'week', 'later']);
+  });
+
+  it('leaves a meeting further out than tomorrow off the list', async () => {
+    const now = new Date(2026, 8, 2, 10, 0).getTime();
+    const soon = meetingSig('soon', new Date(2026, 8, 3, 9, 0).getTime());
+    const far = meetingSig('far', new Date(2026, 8, 6, 9, 0).getTime());
+    const calendar = fakeConnector('calendar', { fetch: () => Promise.resolve([soon, far]) });
+    hub = makeHub([calendar]);
+    hub.start();
+    await hub.syncNow();
+
+    expect(hub.day(now).map((i) => i.signal.id)).toEqual(['calendar:soon']);
   });
 });

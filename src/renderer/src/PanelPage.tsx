@@ -4,13 +4,21 @@ import type { Config } from '../../shared/config';
 import { translator } from '../../shared/i18n';
 import type { Translate } from '../../shared/i18n';
 import type { MessageKey } from '../../shared/i18n/en';
-import type { DayItem, SignalAction, SignalSource } from '../../shared/signals';
-import { formatTimeLeft } from './panel-format';
+import type { DayGroup, DayItem, SignalAction, SignalSource } from '../../shared/signals';
+import { formatTimeLeft, groupRows, panelTitle } from './panel-format';
 
 const SOURCE_KEY: Record<SignalSource, MessageKey> = {
   clickup: 'panel.source.clickup',
   calendar: 'panel.source.calendar',
   gruply: 'panel.source.gruply',
+};
+
+const GROUP_KEY: Record<DayGroup, MessageKey> = {
+  late: 'panel.group.late',
+  today: 'panel.group.today',
+  tomorrow: 'panel.group.tomorrow',
+  week: 'panel.group.week',
+  later: 'panel.group.later',
 };
 
 interface RowState {
@@ -166,11 +174,13 @@ export function Panel() {
 
   const t = translator(config.locale, { name: config.name });
 
+  const sections = groupRows(items);
+
   return (
     <div className="panel-window">
       <div className="panel">
         <header className="panel-header">
-          <h1>{t('panel.title', { count: items.length })}</h1>
+          <h1>{panelTitle(items, t)}</h1>
           <button
             type="button"
             className="panel-close"
@@ -182,39 +192,49 @@ export function Panel() {
             ×
           </button>
         </header>
-        {items.length === 0 ? (
-          <p className="empty">{t('panel.empty')}</p>
-        ) : (
-          <ul className="list">
-            {items.map((item) => {
-              const id = item.signal.id;
-              const state = rowStates[id] ?? {};
-              return (
-                <Row
-                  key={id}
-                  item={item}
-                  state={state}
-                  t={t}
-                  onOpen={() => {
-                    performAction(id, 'open');
-                  }}
-                  onSnooze={() => {
-                    performAction(id, 'snooze');
-                  }}
-                  onStartConfirm={() => {
-                    updateRow(id, { confirming: true });
-                  }}
-                  onCancelConfirm={() => {
-                    updateRow(id, undefined);
-                  }}
-                  onConfirmComplete={() => {
-                    performAction(id, 'complete');
-                  }}
-                />
-              );
-            })}
-          </ul>
-        )}
+        <div className="panel-body">
+          {sections.length === 0 ? (
+            <p className="empty">{t('panel.emptyAll')}</p>
+          ) : (
+            sections.map((section) => (
+              <section key={section.group} className={`group ${section.group}`}>
+                <h2 className="group-head">
+                  {t(GROUP_KEY[section.group])}
+                  <span className="group-count">{section.items.length}</span>
+                </h2>
+                <ul className="list">
+                  {section.items.map((item) => {
+                    const id = item.signal.id;
+                    const state = rowStates[id] ?? {};
+                    return (
+                      <Row
+                        key={id}
+                        item={item}
+                        state={state}
+                        t={t}
+                        onOpen={() => {
+                          performAction(id, 'open');
+                        }}
+                        onSnooze={() => {
+                          performAction(id, 'snooze');
+                        }}
+                        onStartConfirm={() => {
+                          updateRow(id, { confirming: true });
+                        }}
+                        onCancelConfirm={() => {
+                          updateRow(id, undefined);
+                        }}
+                        onConfirmComplete={() => {
+                          performAction(id, 'complete');
+                        }}
+                      />
+                    );
+                  })}
+                </ul>
+              </section>
+            ))
+          )}
+        </div>
       </div>
     </div>
   );

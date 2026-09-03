@@ -154,6 +154,19 @@ export const en = {
   'panel.time.late': '{hours} h late',
   'panel.time.lateMinutes': '{minutes} min late',
   'panel.time.allDay': 'All day',
+  'panel.time.weekdays': 'Sun Mon Tue Wed Thu Fri Sat',
+  'panel.time.months': 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec',
+  'panel.time.date': '{day} {month}',
+  'panel.title.lateAndToday': '{late} late, {today} today',
+  'panel.title.lateOnly': '{late} late',
+  'panel.title.ahead': '{count} coming up',
+  'panel.title.clear': 'Nothing open',
+  'panel.emptyAll': 'No open tasks and no meetings.',
+  'panel.group.late': 'Late',
+  'panel.group.today': 'Today',
+  'panel.group.tomorrow': 'Tomorrow',
+  'panel.group.week': 'This week',
+  'panel.group.later': 'Later',
 } as const;
 
 export type MessageKey = keyof typeof en;

@@ -6,8 +6,12 @@ import type { DayOptions } from './day';
 
 const minute = 60_000;
 const hour = 60 * minute;
+const day = 24 * hour;
+// A Wednesday, so the week group covers Friday through Tuesday.
 const now = Date.UTC(2026, 8, 2, 10);
 const endOfDay = Date.UTC(2026, 8, 2, 24);
+const endOfTomorrow = endOfDay + day;
+const endOfWeek = endOfDay + 6 * day;
 
 function taskSig(id: string, dueAt: number, overrides: Partial<Signal> = {}): Signal {
   return {
@@ -48,6 +52,8 @@ function opts(overrides: Partial<DayOptions> = {}): DayOptions {
   return {
     nowMs: now,
     endOfDayMs: endOfDay,
+    endOfTomorrowMs: endOfTomorrow,
+    endOfWeekMs: endOfWeek,
     snoozedUntil: () => undefined,
     canComplete: () => true,
     ...overrides,
@@ -78,9 +84,11 @@ describe('dayItems', () => {
     expect(item?.minutesLeft).toBe(120);
   });
 
-  it('drops a task due after the end of the day', () => {
-    const task = taskSig('a', endOfDay + hour);
-    expect(dayItems([task], opts())).toEqual([]);
+  it('keeps a task due long after the end of the day', () => {
+    const task = taskSig('a', endOfDay + 9 * day);
+    const [item] = dayItems([task], opts());
+    expect(item?.signal.id).toBe('clickup:a');
+    expect(item?.overdue).toBe(false);
   });
 
   it('keeps a meeting starting before the end of the day', () => {
@@ -95,8 +103,14 @@ describe('dayItems', () => {
     expect(dayItems([meeting], opts())).toEqual([]);
   });
 
-  it('drops a meeting starting after the end of the day', () => {
+  it('keeps a meeting starting tomorrow', () => {
     const meeting = meetingSig('a', endOfDay + hour);
+    const [item] = dayItems([meeting], opts());
+    expect(item?.group).toBe('tomorrow');
+  });
+
+  it('drops a meeting starting after tomorrow', () => {
+    const meeting = meetingSig('a', endOfTomorrow + hour);
     expect(dayItems([meeting], opts())).toEqual([]);
   });
 
@@ -120,6 +134,36 @@ describe('dayItems', () => {
   it('leaves snoozedUntil unset for a signal with no snooze', () => {
     const [item] = dayItems([taskSig('a', now + hour)], opts());
     expect(item?.snoozedUntil).toBeUndefined();
+  });
+
+  it('files each task under the group its due date falls in', () => {
+    const late = taskSig('late', now - hour);
+    const today = taskSig('today', now + 2 * hour);
+    const tomorrow = taskSig('tomorrow', endOfDay + hour);
+    const week = taskSig('week', endOfTomorrow + hour);
+    const later = taskSig('later', endOfWeek + hour);
+    const items = dayItems([later, week, tomorrow, today, late], opts());
+    expect(items.map((i) => i.group)).toEqual(['late', 'today', 'tomorrow', 'week', 'later']);
+    expect(ids(items)).toEqual([
+      'clickup:late',
+      'clickup:today',
+      'clickup:tomorrow',
+      'clickup:week',
+      'clickup:later',
+    ]);
+  });
+
+  it('files a task due on the last minute of the week under week, not later', () => {
+    const edge = taskSig('a', endOfWeek - minute);
+    const [item] = dayItems([edge], opts());
+    expect(item?.group).toBe('week');
+  });
+
+  it('files a meeting already under way under today', () => {
+    const meeting = meetingSig('a', now - 10 * minute, { endsAt: now + 20 * minute });
+    const [item] = dayItems([meeting], opts());
+    expect(item?.group).toBe('today');
+    expect(item?.overdue).toBe(false);
   });
 
   it('offers complete only for task-due signals whose source can write', () => {

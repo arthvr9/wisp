@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { translator } from '../../shared/i18n';
-import type { DayItem, Signal } from '../../shared/signals';
-import { formatTimeLeft } from './panel-format';
+import type { DayGroup, DayItem, Signal } from '../../shared/signals';
+import { formatTimeLeft, groupRows, panelTitle } from './panel-format';
 
 const t = translator('en');
 const minute = 60_000;
@@ -21,12 +21,14 @@ function taskSignal(dueAt: number): Signal {
   };
 }
 
-function taskItem(dueAt: number, nowMs: number): DayItem {
+function taskItem(dueAt: number, nowMs: number, group: DayGroup = 'today'): DayItem {
   const minutesLeft = Math.round((dueAt - nowMs) / minute);
+  const overdue = minutesLeft < 0;
   return {
     signal: taskSignal(dueAt),
     minutesLeft,
-    overdue: minutesLeft < 0,
+    overdue,
+    group: overdue ? 'late' : group,
     actions: { complete: true },
   };
 }
@@ -50,6 +52,7 @@ function meetingItem(dueAt: number, endsAt: number, allDay = false): DayItem {
     signal: meetingSignal(dueAt, endsAt, allDay),
     minutesLeft: Math.round((dueAt - Date.now()) / minute),
     overdue: false,
+    group: 'today',
     actions: { complete: false },
   };
 }
@@ -91,5 +94,73 @@ describe('formatTimeLeft', () => {
     const end = new Date(2026, 8, 2, 14, 30).getTime();
     const item = meetingItem(start, end);
     expect(formatTimeLeft(item, t)).toBe('14:00-14:30');
+  });
+
+  it('shows the weekday for a task due tomorrow', () => {
+    const now = new Date(2026, 8, 2, 10, 0).getTime();
+    const dueAt = new Date(2026, 8, 3, 9, 0).getTime();
+    expect(formatTimeLeft(taskItem(dueAt, now, 'tomorrow'), t)).toBe('Thu');
+  });
+
+  it('shows the weekday for a task due later this week', () => {
+    const now = new Date(2026, 8, 2, 10, 0).getTime();
+    const dueAt = new Date(2026, 8, 7, 17, 0).getTime();
+    expect(formatTimeLeft(taskItem(dueAt, now, 'week'), t)).toBe('Mon');
+  });
+
+  it('shows a short date for a task due beyond the week', () => {
+    const now = new Date(2026, 8, 2, 10, 0).getTime();
+    const dueAt = new Date(2026, 8, 11, 17, 0).getTime();
+    expect(formatTimeLeft(taskItem(dueAt, now, 'later'), t)).toBe('11 Sep');
+  });
+
+  it('keeps the countdown for something due within the hour but past midnight', () => {
+    const now = new Date(2026, 8, 2, 23, 50).getTime();
+    const dueAt = new Date(2026, 8, 3, 0, 20).getTime();
+    expect(formatTimeLeft(taskItem(dueAt, now, 'tomorrow'), t)).toBe('in 30 min');
+  });
+});
+
+describe('groupRows', () => {
+  it('keeps the group order and drops the empty groups', () => {
+    const now = new Date(2026, 8, 2, 10, 0).getTime();
+    const items = [
+      taskItem(now - hour, now),
+      taskItem(now + 3 * hour, now, 'today'),
+      taskItem(now + 9 * 24 * hour, now, 'later'),
+    ];
+    expect(groupRows(items).map((s) => s.group)).toEqual(['late', 'today', 'later']);
+    expect(groupRows(items).map((s) => s.items.length)).toEqual([1, 1, 1]);
+  });
+
+  it('returns nothing for an empty list', () => {
+    expect(groupRows([])).toEqual([]);
+  });
+});
+
+describe('panelTitle', () => {
+  const now = new Date(2026, 8, 2, 10, 0).getTime();
+  const late = () => taskItem(now - hour, now);
+  const today = () => taskItem(now + 3 * hour, now, 'today');
+  const later = () => taskItem(now + 9 * 24 * hour, now, 'later');
+
+  it('counts late and today together when both exist', () => {
+    expect(panelTitle([late(), late(), today()], t)).toBe('2 late, 1 today');
+  });
+
+  it('counts only what is late when nothing is due today', () => {
+    expect(panelTitle([late(), later()], t)).toBe('1 late');
+  });
+
+  it('counts what is due today when nothing is late', () => {
+    expect(panelTitle([today(), later()], t)).toBe('1 due today');
+  });
+
+  it('falls back to the whole list when nothing is late or due today', () => {
+    expect(panelTitle([later(), later()], t)).toBe('2 coming up');
+  });
+
+  it('says the list is empty when it is', () => {
+    expect(panelTitle([], t)).toBe('Nothing open');
   });
 });
