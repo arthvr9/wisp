@@ -273,17 +273,30 @@ not match its generator.
 
 ### Roadmap
 
-| Phase | What                                                      | State       |
-| ----- | --------------------------------------------------------- | ----------- |
-| 0     | Prove the window mechanics and measure the cost           | Done        |
-| 1     | The creature walks, sleeps, follows, and can be dismissed | Done        |
-| 2     | The first real data, ClickUp over MCP                     | Done        |
-| 3     | Rules, silence windows, a budget                          | Done        |
-| 4     | Mood, celebration, an optional voice                      | Done        |
-| 5     | A second connector, to test the abstraction               | Done        |
-| 6     | Click the mascot and act on the day                       | Done        |
-| 7     | Package, document, publish                                | In progress |
-| 8     | A native GNOME extension instead of the XWayland window   | Maybe       |
+| Phase | What                                                      | State     |
+| ----- | --------------------------------------------------------- | --------- |
+| 0     | Prove the window mechanics and measure the cost           | Done      |
+| 1     | The creature walks, sleeps, follows, and can be dismissed | Done      |
+| 2     | The first real data, ClickUp over MCP                     | Done      |
+| 3     | Rules, silence windows, a budget                          | Done      |
+| 4     | Mood, celebration, an optional voice                      | Done      |
+| 5     | A second connector, to test the abstraction               | Done      |
+| 6     | Click the mascot and act on the day                       | Done      |
+| 7     | Package, document, publish                                | Done      |
+| 8     | A native GNOME extension instead of the XWayland window   | Not doing |
+
+## The Wayland problem
+
+The hardest part of this project was not the tasks or the mood, it was getting a window to sit
+above other windows on a modern Linux desktop at all. `docs/wayland.md` is a field report on
+that: what does not work and why, what does work and what it costs, and the accident that
+turned out to be the whole design.
+
+Phase 8 in the table above, replacing the XWayland window with a native GNOME extension, is not
+being done. The criterion for it was that the current approach had to hurt, and measured over
+ten minutes it costs 0.14 percent of one core with a p95 loop deviation of 0.31 ms. The known
+price is that following the pointer across monitors barely works, which is documented rather
+than fixed.
 
 ## License
 
