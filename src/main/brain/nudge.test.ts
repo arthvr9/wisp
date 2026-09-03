@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import type { NudgeRecord, SilenceWindow } from '../../shared/nudges';
-import type { Signal } from '../../shared/signals';
+import type { Meeting, Signal } from '../../shared/signals';
+import { meetingWindows } from './meetings';
 import { RULES, decideNudges } from './nudge';
 import type { NudgeInput } from './nudge';
 
@@ -11,6 +12,7 @@ const day = 24 * hour;
 const now = Date.UTC(2026, 8, 2, 10);
 const midnight = Date.UTC(2026, 8, 2);
 const dueSoonMs = 30 * minute;
+const meetingWarnMs = 10 * minute;
 
 function sig(id: string, dueAt: number): Signal {
   return {
@@ -25,8 +27,34 @@ function sig(id: string, dueAt: number): Signal {
   };
 }
 
-function record(id: string, kind: NudgeRecord['kind'], at: number): NudgeRecord {
-  return { signalId: `clickup:${id}`, kind, at };
+function meetingSig(id: string, dueAt: number, overrides: Partial<Meeting> = {}): Signal {
+  return {
+    id: `outlook:${id}`,
+    source: 'outlook',
+    kind: 'meeting',
+    title: id,
+    dueAt,
+    url: `https://outlook.office.com/calendar/item/${id}`,
+    status: 'confirmed',
+    listName: 'Calendar',
+    meeting: {
+      endsAt: dueAt + 30 * minute,
+      accepted: true,
+      allDay: false,
+      organizer: 'boss@example.com',
+      busy: true,
+      ...overrides,
+    },
+  };
+}
+
+function record(
+  id: string,
+  kind: NudgeRecord['kind'],
+  at: number,
+  source: 'clickup' | 'outlook' = 'clickup',
+): NudgeRecord {
+  return { signalId: `${source}:${id}`, kind, at };
 }
 
 function decide(overrides: Partial<NudgeInput>) {
@@ -37,6 +65,7 @@ function decide(overrides: Partial<NudgeInput>) {
     silence: [],
     budget: { maxPerHour: 10, maxPerDay: 100 },
     dueSoonMs,
+    meetingWarnMs,
     tzOffsetMinutes: 0,
     ...overrides,
   });
@@ -47,7 +76,21 @@ const kinds = (input: Partial<NudgeInput>) =>
 
 describe('RULES', () => {
   it('has one row per kind in priority order', () => {
-    expect(RULES.map((r) => r.kind)).toEqual(['due-now', 'due-soon', 'overdue', 'due-today']);
+    expect(RULES.map((r) => r.kind)).toEqual([
+      'due-now',
+      'due-soon',
+      'overdue',
+      'due-today',
+      'meeting-now',
+      'meeting-soon',
+    ]);
+  });
+
+  it('gates task rules to task-due signals and meeting rules to meeting signals', () => {
+    const taskRules = RULES.filter((r) => r.kind.startsWith('due') || r.kind === 'overdue');
+    const meetingRules = RULES.filter((r) => r.kind.startsWith('meeting'));
+    expect(taskRules.every((r) => r.signalKind === 'task-due')).toBe(true);
+    expect(meetingRules.every((r) => r.signalKind === 'meeting')).toBe(true);
   });
 });
 
@@ -160,6 +203,67 @@ describe('decideNudges rules', () => {
   });
 });
 
+describe('decideNudges meeting rules', () => {
+  it('meeting-now: within the last minute, urgent, once', () => {
+    expect(kinds({ signals: [meetingSig('a', now - 30_000)] })).toEqual([
+      ['outlook:a', 'meeting-now', 'urgent', 0, 0],
+    ]);
+    expect(kinds({ signals: [meetingSig('a', now)] })).toEqual([
+      ['outlook:a', 'meeting-now', 'urgent', 0, 0],
+    ]);
+    expect(
+      kinds({
+        signals: [meetingSig('a', now)],
+        history: [record('a', 'meeting-now', now - 20_000, 'outlook')],
+      }),
+    ).toEqual([]);
+  });
+
+  it('meeting-soon: inside the warning window, normal, once', () => {
+    expect(kinds({ signals: [meetingSig('a', now + 5 * minute)] })).toEqual([
+      ['outlook:a', 'meeting-soon', 'normal', 5, 0],
+    ]);
+    expect(kinds({ signals: [meetingSig('a', now + meetingWarnMs)] })).toEqual([
+      ['outlook:a', 'meeting-soon', 'normal', meetingWarnMs / minute, 0],
+    ]);
+    expect(
+      kinds({
+        signals: [meetingSig('a', now + 5 * minute)],
+        history: [record('a', 'meeting-soon', now - 2 * minute, 'outlook')],
+      }),
+    ).toEqual([]);
+  });
+
+  it('meeting-soon never matches when meetingWarnMs is 0, only meeting-now', () => {
+    expect(kinds({ signals: [meetingSig('a', now + minute)], meetingWarnMs: 0 })).toEqual([]);
+    expect(kinds({ signals: [meetingSig('a', now)], meetingWarnMs: 0 })).toEqual([
+      ['outlook:a', 'meeting-now', 'urgent', 0, 0],
+    ]);
+  });
+
+  it('skips a meeting that is all day', () => {
+    expect(kinds({ signals: [meetingSig('a', now, { allDay: true })] })).toEqual([]);
+    expect(kinds({ signals: [meetingSig('a', now + 5 * minute, { allDay: true })] })).toEqual([]);
+  });
+
+  it('skips a meeting that was declined or never answered', () => {
+    expect(kinds({ signals: [meetingSig('a', now, { accepted: false })] })).toEqual([]);
+    expect(
+      kinds({ signals: [meetingSig('a', now + 5 * minute, { accepted: false })] }),
+    ).toEqual([]);
+  });
+
+  it('still warns for a meeting marked free rather than busy', () => {
+    expect(kinds({ signals: [meetingSig('a', now + 5 * minute, { busy: false })] })).toEqual([
+      ['outlook:a', 'meeting-soon', 'normal', 5, 0],
+    ]);
+  });
+
+  it('a task signal never matches the meeting rules', () => {
+    expect(kinds({ signals: [sig('a', now)] }).map((r) => r[1])).toEqual(['due-now']);
+  });
+});
+
 describe('decideNudges ordering', () => {
   it('sorts urgent, normal, low, then by dueAt', () => {
     const out = decide({
@@ -213,6 +317,17 @@ describe('decideNudges silence', () => {
     });
     expect(out.nudges.map((n) => n.title)).toEqual(['now']);
     expect(out.overBudget).toEqual([]);
+  });
+
+  it('a meeting window silences a normal task nudge but lets an urgent one through', () => {
+    const meeting = meetingSig('standup', now - 5 * minute, { endsAt: now + 25 * minute });
+    const windows = meetingWindows([meeting], { enabled: true });
+    const out = decide({
+      signals: [sig('urgent-task', now), sig('normal-task', now + 10 * minute)],
+      silence: windows,
+    });
+    expect(out.nudges.map((n) => n.title)).toEqual(['urgent-task']);
+    expect(out.silenced.map((n) => n.title)).toEqual(['normal-task']);
   });
 });
 
