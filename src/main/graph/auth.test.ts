@@ -200,7 +200,7 @@ describe('GraphAuth', () => {
       now: () => 1_000_000,
       openExternal: () => undefined,
     });
-    secrets.set('outlook.tokens', {
+    secrets.set('outlook.tokens.client-1.contoso', {
       accessToken: 'still-good',
       refreshToken: 'refresh-1',
       expiresAt: 1_000_000 + 10 * 60_000,
@@ -227,7 +227,7 @@ describe('GraphAuth', () => {
       now: () => now,
       openExternal: () => undefined,
     });
-    secrets.set('outlook.tokens', {
+    secrets.set('outlook.tokens.client-1.contoso', {
       accessToken: 'about-to-expire',
       refreshToken: 'refresh-1',
       expiresAt: now + 30_000,
@@ -263,7 +263,7 @@ describe('GraphAuth', () => {
       now: () => 1_000_000,
       openExternal: () => undefined,
     });
-    secrets.set('outlook.tokens', {
+    secrets.set('outlook.tokens.client-1.contoso', {
       accessToken: 'about-to-expire',
       refreshToken: 'refresh-1',
       expiresAt: 1_000_000 + 30_000,
@@ -279,7 +279,7 @@ describe('GraphAuth', () => {
       secrets,
       openExternal: () => undefined,
     });
-    secrets.set('outlook.tokens', {
+    secrets.set('outlook.tokens.client-1.contoso', {
       accessToken: 'a',
       refreshToken: 'r',
       expiresAt: 2_000_000,

@@ -16,7 +16,7 @@ import { decideNudges } from '../brain/nudge';
 import type { NudgeDecision } from '../brain/nudge';
 import type { SecretStore } from '../mcp';
 import { NeedsAuthorizationError } from '../mcp';
-import { Scheduler, SignalStore } from '../signals';
+import { nextDelayMs, Scheduler, SignalStore } from '../signals';
 import type { Celebration, Mood, MoodEvent, MoodModifiers } from '../../shared/mood';
 import type { Nudge, NudgeBudget, SilenceWindow } from '../../shared/nudges';
 import { SIGNAL_SOURCES } from '../../shared/signals';
@@ -49,13 +49,6 @@ function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-// A plain `throw firstError` after an `!== undefined` guard narrows the type away from
-// `unknown`, which the lint rule then requires to be an Error. Throwing inside a function
-// whose own parameter is declared `unknown` keeps the rethrow honest without a type assertion.
-function rethrow(err: unknown): never {
-  throw err;
-}
-
 function disconnectedStates(): Record<SignalSource, ConnectionState> {
   const entries = SIGNAL_SOURCES.map((source) => [source, { state: 'disconnected' as const }]);
   return Object.fromEntries(entries) as Record<SignalSource, ConnectionState>;
@@ -71,6 +64,8 @@ export class ConnectorHub {
   private readonly scheduler: Scheduler;
   private readonly state: Record<SignalSource, ConnectionState> = disconnectedStates();
   private readonly generation: Record<SignalSource, number> = zeroGenerations();
+  private readonly failures: Record<string, number> = {};
+  private readonly retryAt: Record<string, number> = {};
   private readonly lastSyncAt: Partial<Record<SignalSource, number>> = {};
   private readonly active = new Set<SignalSource>();
   private mood: MoodState = initialMood;
@@ -105,6 +100,7 @@ export class ConnectorHub {
   status(): SignalsStatus {
     return {
       connectors: { ...this.state },
+      active: [...this.active],
       nextSyncAt: this.scheduler.nextAt(),
       silence: this.opts.silenceStatus(Date.now()),
       secretsEncrypted: this.opts.secrets.encryptionAvailable(),
@@ -234,13 +230,14 @@ export class ConnectorHub {
 
   private async sync(): Promise<void> {
     const now = Date.now();
-    let firstError: unknown;
     const completed: { title: string; at: number }[] = [];
     const moodEvents: MoodEvent[] = [];
 
     for (const connector of this.opts.connectors) {
       const source = connector.source;
       if (!this.active.has(source)) continue;
+      // Backoff is per source, so one failing connector cannot slow the polling of the others.
+      if (now < (this.retryAt[source] ?? 0)) continue;
       const generation = this.generation[source];
       const stale = () => generation !== this.generation[source];
       try {
@@ -259,9 +256,18 @@ export class ConnectorHub {
         this.lastSyncAt[source] = now;
         const openCount = signals.filter((sig) => sig.closedAt === undefined).length;
         this.state[source] = { state: 'connected', lastSyncAt: now, signalCount: openCount };
+        this.failures[source] = 0;
+        this.retryAt[source] = 0;
       } catch (err) {
         if (stale()) continue;
-        firstError ??= err;
+        this.failures[source] = (this.failures[source] ?? 0) + 1;
+        this.retryAt[source] =
+          now +
+          nextDelayMs({
+            baseMs: this.opts.pollMinutes() * 60_000,
+            failures: this.failures[source],
+            rng: Math.random,
+          });
         if (err instanceof NeedsAuthorizationError) {
           this.state[source] = { state: 'error', message: 'authorization expired, connect again' };
         } else {
@@ -278,7 +284,6 @@ export class ConnectorHub {
     if (moodEvents.length > 0) this.pushMoodEvents(moodEvents, now);
     this.publish();
     this.opts.onNudges(this.decide(now).nudges);
-    if (firstError !== undefined) rethrow(firstError);
   }
 
   publishStatus(): void {

@@ -24,8 +24,8 @@ export interface ToolResultLike {
 }
 
 export class NeedsAuthorizationError extends Error {
-  constructor() {
-    super('the MCP server requires interactive authorization');
+  constructor(message = 'the server requires interactive authorization') {
+    super(message);
     this.name = 'NeedsAuthorizationError';
   }
 }

@@ -5,3 +5,8 @@ harness-results/
 *.log
 .DS_Store
 *.tsbuildinfo
+
+# Local secrets, never commit
+.env
+.env.*
+!.env.example

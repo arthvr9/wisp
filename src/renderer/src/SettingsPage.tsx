@@ -372,7 +372,9 @@ export function SettingsPage() {
 
   function actions(source: SignalSource, connectable: boolean) {
     const state = signals?.connectors[source].state;
-    if (state === 'connected' || state === 'error') {
+    const syncing =
+      state === 'connected' || (state === 'error' && signals?.active.includes(source));
+    if (syncing) {
       return (
         <div className="actions">
           <button type="button" disabled={busy} onClick={connector(source, 'sync')}>

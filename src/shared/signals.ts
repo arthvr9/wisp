@@ -40,6 +40,8 @@ export interface SilenceStatus {
 
 export interface SignalsStatus {
   connectors: Record<SignalSource, ConnectionState>;
+  /** Sources the scheduler is polling. A source that never authorized is not in here. */
+  active: SignalSource[];
   nextSyncAt?: number;
   silence: SilenceStatus;
   secretsEncrypted: boolean;
