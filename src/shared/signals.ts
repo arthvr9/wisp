@@ -1,7 +1,7 @@
 import type { SilenceSource } from './nudges';
 
-export type SignalSource = 'clickup' | 'outlook';
-export const SIGNAL_SOURCES: readonly SignalSource[] = ['clickup', 'outlook'];
+export type SignalSource = 'clickup' | 'outlook' | 'gruply';
+export const SIGNAL_SOURCES: readonly SignalSource[] = ['clickup', 'outlook', 'gruply'];
 export type SignalKind = 'task-due' | 'meeting';
 
 export interface Meeting {
@@ -32,6 +32,21 @@ export type ConnectionState =
   | { state: 'authorizing' }
   | { state: 'connected'; lastSyncAt?: number; signalCount: number }
   | { state: 'error'; message: string; lastSyncAt?: number };
+
+export type SignalAction = 'complete' | 'snooze' | 'open';
+
+export interface SignalActions {
+  /** Which actions this source supports. Opening a link always works. */
+  complete: boolean;
+}
+
+export interface DayItem {
+  signal: Signal;
+  minutesLeft: number;
+  overdue: boolean;
+  snoozedUntil?: number;
+  actions: SignalActions;
+}
 
 export interface SilenceStatus {
   snoozedUntil?: number;

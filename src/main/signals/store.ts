@@ -56,6 +56,10 @@ CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS snoozes (
+  signal_id TEXT PRIMARY KEY,
+  until INTEGER NOT NULL
+);
 `;
 
 function text(v: SQLOutputValue | undefined): string {
@@ -228,6 +232,29 @@ export class SignalStore {
       kind: text(r.kind) as NudgeKind,
       at: int(r.at),
     }));
+  }
+
+  // The watermark is the actual clock, not untilMs, because untilMs is a future expiry and
+  // comparing other rows against it would delete snoozes that are still active.
+  snooze(signalId: string, untilMs: number): void {
+    this.db
+      .prepare(
+        `INSERT INTO snoozes (signal_id, until) VALUES (?, ?)
+         ON CONFLICT(signal_id) DO UPDATE SET until = excluded.until`,
+      )
+      .run(signalId, untilMs);
+    this.db.prepare('DELETE FROM snoozes WHERE until < ?').run(Date.now());
+  }
+
+  snoozedUntil(signalId: string, nowMs: number): number | undefined {
+    const row = this.db.prepare('SELECT until FROM snoozes WHERE signal_id = ?').get(signalId);
+    if (row === undefined) return undefined;
+    const until = int(row.until);
+    return until > nowMs ? until : undefined;
+  }
+
+  clearSnooze(signalId: string): void {
+    this.db.prepare('DELETE FROM snoozes WHERE signal_id = ?').run(signalId);
   }
 
   getMeta(key: string): string | undefined {

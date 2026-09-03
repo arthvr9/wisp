@@ -10,6 +10,11 @@ export interface OutlookConfig {
   silenceDuringMeetings: boolean;
 }
 
+export interface GruplyConfig {
+  baseUrl: string;
+  email: string;
+}
+
 export interface Config {
   name: string;
   locale: Locale;
@@ -21,6 +26,7 @@ export interface Config {
   budget: NudgeBudget;
   speech: SpeechConfig;
   outlook: OutlookConfig;
+  gruply: GruplyConfig;
 }
 
 export const defaultConfig: Config = {
@@ -34,6 +40,7 @@ export const defaultConfig: Config = {
   budget: { maxPerHour: 3, maxPerDay: 12 },
   speech: { provider: 'off', baseUrl: '', model: '' },
   outlook: { clientId: '', tenant: 'common', warnMinutes: 5, silenceDuringMeetings: true },
+  gruply: { baseUrl: 'https://api.gruply.com.br/api', email: '' },
 };
 
 const PROVIDERS = ['off', 'ollama', 'openai-compatible', 'anthropic'] as const;
@@ -84,6 +91,16 @@ export function normalizeConfig(raw: unknown): Config {
         typeof o.silenceDuringMeetings === 'boolean'
           ? o.silenceDuringMeetings
           : c.outlook.silenceDuringMeetings,
+    };
+  }
+  if (typeof r.gruply === 'object' && r.gruply !== null) {
+    const g = r.gruply as Record<string, unknown>;
+    c.gruply = {
+      baseUrl:
+        typeof g.baseUrl === 'string' && g.baseUrl.trim().length > 0
+          ? g.baseUrl.trim().slice(0, 200)
+          : c.gruply.baseUrl,
+      email: typeof g.email === 'string' ? g.email.trim().slice(0, 120) : c.gruply.email,
     };
   }
   if (typeof r.budget === 'object' && r.budget !== null) {

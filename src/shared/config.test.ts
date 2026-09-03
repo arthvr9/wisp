@@ -22,6 +22,7 @@ describe('normalizeConfig', () => {
       budget: { maxPerHour: 3, maxPerDay: 12 },
       speech: { provider: 'off', baseUrl: '', model: '' },
       outlook: { clientId: '', tenant: 'common', warnMinutes: 5, silenceDuringMeetings: true },
+      gruply: { baseUrl: 'https://api.gruply.com.br/api', email: '' },
     });
     expect(normalizeConfig({ name: 'x'.repeat(40) }).name).toHaveLength(24);
   });

@@ -19,20 +19,27 @@ import type { ActorState } from './brain/actor';
 import { groundY } from './brain/movement';
 import type { DisplayArea, Target } from './brain/movement';
 import { ConfigStore } from './config';
-import { ConnectorHub, createClickUpConnector, createOutlookConnector } from './connectors';
+import {
+  ConnectorHub,
+  createClickUpConnector,
+  createGruplyConnector,
+  createOutlookConnector,
+} from './connectors';
 import { meetingWindows } from './brain/meetings';
+import { loadDotEnv } from './env';
 import { SecretStore } from './mcp';
 import { SilenceSources } from './silence';
 import { createVoice } from './voice';
 import type { Celebration, Mood } from '../shared/mood';
 import type { SpeechEvent, SpeechRequest } from '../shared/speech';
 import type { Nudge } from '../shared/nudges';
-import type { SignalSource } from '../shared/signals';
+import type { DayItem, SignalAction, SignalSource } from '../shared/signals';
 import { describeEnvironment, formatEnvironment } from './harness/environment';
 import { Harness, formatSummary } from './harness/metrics';
 import { menuTemplate } from './menu';
 import { registerShortcut, SHORTCUT } from './shortcut';
 import { createBubble } from './stage/bubble';
+import { createPanel } from './stage/panel';
 import { openSettings } from './stage/settings';
 import { createStage, MASCOT_SIZE } from './stage/window';
 import { createTray, detectTray } from './tray';
@@ -62,6 +69,10 @@ function toArea(d: Display): DisplayArea {
   return { id: d.id, ...d.workArea };
 }
 
+function isAction(value: unknown): value is SignalAction {
+  return value === 'complete' || value === 'snooze' || value === 'open';
+}
+
 function harnessMinutes(): number | undefined {
   const raw = process.env.WISP_HARNESS_MINUTES;
   if (!raw) return undefined;
@@ -71,6 +82,7 @@ function harnessMinutes(): number | undefined {
 
 void app.whenReady().then(async () => {
   const appPath = app.getAppPath();
+  loadDotEnv(appPath);
   const config = new ConfigStore(join(app.getPath('userData'), 'config.json'));
   const broadcast = (channel: string, payload: unknown) => {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(channel, payload);
@@ -167,10 +179,24 @@ void app.whenReady().then(async () => {
   };
 
   const openExternal = (url: string) => shell.openExternal(url);
+  const GRUPLY_KEY = 'gruply.token';
+  // The environment variable is a convenience for running from source. A pasted key goes to
+  // safeStorage, which is where a packaged build keeps it.
+  const gruplyToken = (): string | undefined => {
+    const stored = secrets.get(GRUPLY_KEY, (raw) => (typeof raw === 'string' ? raw : undefined));
+    return stored ?? process.env.WISP_GRUPLY_TOKEN;
+  };
+  const secretStatus = (): Record<string, boolean> => ({
+    gruply: gruplyToken() !== undefined,
+    gruplyFromEnv:
+      secrets.get(GRUPLY_KEY, (raw) => (typeof raw === 'string' ? raw : undefined)) === undefined &&
+      process.env.WISP_GRUPLY_TOKEN !== undefined,
+  });
   const connectors: ConnectorHub = new ConnectorHub({
     connectors: [
       createClickUpConnector({ secrets, openExternal, version: app.getVersion() }),
       createOutlookConnector({ secrets, openExternal, config: () => config.get().outlook }),
+      createGruplyConnector({ token: gruplyToken, config: () => config.get().gruply }),
     ],
     secrets,
     pollMinutes: () => config.get().pollMinutes,
@@ -204,6 +230,10 @@ void app.whenReady().then(async () => {
       onMood(mood);
     },
     onCelebration: celebrate,
+    openExternal,
+    onDay: (items) => {
+      broadcast(IPC.dayChanged, items);
+    },
   });
   const onMood = (mood: Mood) => {
     broadcast(IPC.moodChanged, mood);
@@ -220,9 +250,31 @@ void app.whenReady().then(async () => {
   ipcMain.handle(IPC.syncNow, () => connectors.syncNow());
   ipcMain.handle(IPC.signalsStatusGet, () => connectors.status());
   ipcMain.handle(IPC.signalsList, () => connectors.signals());
+  ipcMain.handle(IPC.dayList, (): DayItem[] => connectors.day(Date.now()));
+  ipcMain.handle(IPC.actionRun, async (_event, signalId: unknown, action: unknown) => {
+    if (typeof signalId !== 'string' || !isAction(action)) throw new Error('unknown action');
+    await connectors.runAction(signalId, action, Date.now());
+    return connectors.day(Date.now());
+  });
+  ipcMain.handle(IPC.secretStatus, () => secretStatus());
+  ipcMain.handle(IPC.secretSet, (_event, name: unknown, value: unknown) => {
+    if (name !== 'gruply') throw new Error('unknown secret');
+    const key = typeof value === 'string' ? value.trim().slice(0, 200) : '';
+    if (key.length === 0) secrets.delete(GRUPLY_KEY);
+    else secrets.set(GRUPLY_KEY, key);
+    connectors.publishStatus();
+    return secretStatus();
+  });
+  ipcMain.on(IPC.panelToggle, () => {
+    togglePanel();
+  });
+  ipcMain.on(IPC.panelClose, () => {
+    panel.hide();
+  });
   app.on('before-quit', () => {
     silence.stop();
     connectors.close();
+    panel.destroy();
     config.flush();
   });
 
@@ -250,6 +302,18 @@ void app.whenReady().then(async () => {
   screen.on('display-removed', refreshDisplays);
   screen.on('display-metrics-changed', refreshDisplays);
 
+  const panel = createPanel();
+  const togglePanel = () => {
+    if (panel.isVisible()) {
+      panel.hide();
+      return;
+    }
+    const display = target.displays.find((d) => d.id === actor.displayId) ?? target.displays[0];
+    if (!display) return;
+    panel.win.webContents.send(IPC.dayChanged, connectors.day(Date.now()));
+    panel.toggle(Math.round(actor.x), Math.round(actor.y), display);
+  };
+
   let hidden = false;
   let tray: TrayHandle | undefined;
   let t = translator(config.get().locale, { name: config.get().name });
@@ -261,6 +325,7 @@ void app.whenReady().then(async () => {
     },
     toggleHidden() {
       hidden = !hidden;
+      if (hidden) panel.hide();
       if (hidden) stage.win.hide();
       else stage.win.showInactive();
       tray?.setMood(hidden ? 'neutral' : connectors.currentMood());

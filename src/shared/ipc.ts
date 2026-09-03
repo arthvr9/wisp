@@ -1,7 +1,7 @@
 import type { PoseUpdate } from './actor';
 import type { Config } from './config';
 import type { Mood } from './mood';
-import type { Signal, SignalSource, SignalsStatus } from './signals';
+import type { DayItem, Signal, SignalAction, SignalSource, SignalsStatus } from './signals';
 import type { SpeechStatus } from './speech';
 
 export const IPC = {
@@ -20,6 +20,13 @@ export const IPC = {
   signalsStatusGet: 'wisp:signals-status-get',
   signalsStatusChanged: 'wisp:signals-status-changed',
   signalsList: 'wisp:signals-list',
+  dayList: 'wisp:day-list',
+  dayChanged: 'wisp:day-changed',
+  actionRun: 'wisp:action-run',
+  panelToggle: 'wisp:panel-toggle',
+  panelClose: 'wisp:panel-close',
+  secretSet: 'wisp:secret-set',
+  secretStatus: 'wisp:secret-status',
   speechStatusGet: 'wisp:speech-status-get',
   speechStatusChanged: 'wisp:speech-status-changed',
   speechSetApiKey: 'wisp:speech-set-api-key',
@@ -61,6 +68,13 @@ export interface WispApi {
   getSignalsStatus(): Promise<SignalsStatus>;
   onSignalsStatusChanged(listener: (status: SignalsStatus) => void): () => void;
   listSignals(): Promise<Signal[]>;
+  listDay(): Promise<DayItem[]>;
+  onDayChanged(listener: (items: DayItem[]) => void): () => void;
+  runAction(signalId: string, action: SignalAction): Promise<DayItem[]>;
+  togglePanel(): void;
+  closePanel(): void;
+  setSecret(name: 'gruply', value: string): Promise<Record<string, boolean>>;
+  secretStatus(): Promise<Record<string, boolean>>;
   getSpeechStatus(): Promise<SpeechStatus>;
   onSpeechStatusChanged(listener: (status: SpeechStatus) => void): () => void;
   setSpeechApiKey(key: string): Promise<SpeechStatus>;

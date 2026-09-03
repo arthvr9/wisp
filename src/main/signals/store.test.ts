@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Signal } from '../../shared/signals';
 import { SignalStore } from './store';
@@ -118,6 +118,66 @@ describe('SignalStore', () => {
     expect(store.getMeta('last-sync')).toBe('123');
     store.setMeta('last-sync', '456');
     expect(store.getMeta('last-sync')).toBe('456');
+  });
+});
+
+describe('snoozes', () => {
+  let store: SignalStore;
+  // The prune on write compares against the real clock, so every test pins it with fake
+  // timers instead of leaving it to whatever Date.now() happens to be.
+  const base = 1_000_000;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(base);
+    store = new SignalStore(':memory:');
+  });
+
+  afterEach(() => {
+    store.close();
+    vi.useRealTimers();
+  });
+
+  it('reports undefined for a signal that was never snoozed', () => {
+    expect(store.snoozedUntil('clickup:a', base)).toBeUndefined();
+  });
+
+  it('reports the stored expiry while it is still in the future', () => {
+    store.snooze('clickup:a', base + 5000);
+    expect(store.snoozedUntil('clickup:a', base + 1000)).toBe(base + 5000);
+  });
+
+  it('reports undefined once the expiry has passed', () => {
+    store.snooze('clickup:a', base + 5000);
+    expect(store.snoozedUntil('clickup:a', base + 6000)).toBeUndefined();
+  });
+
+  it('replaces the expiry when snoozed again', () => {
+    store.snooze('clickup:a', base + 5000);
+    store.snooze('clickup:a', base + 9000);
+    expect(store.snoozedUntil('clickup:a', base + 6000)).toBe(base + 9000);
+  });
+
+  it('clears a snooze explicitly', () => {
+    store.snooze('clickup:a', base + 5000);
+    store.clearSnooze('clickup:a');
+    expect(store.snoozedUntil('clickup:a', base + 1000)).toBeUndefined();
+  });
+
+  it('does not prune a snooze that is still active when another signal is snoozed', () => {
+    store.snooze('clickup:a', base + 60 * 60_000);
+    vi.setSystemTime(base + 10 * 60_000);
+    store.snooze('clickup:b', base + 10 * 60_000 + 60 * 60_000);
+    expect(store.snoozedUntil('clickup:a', base + 20 * 60_000)).toBe(base + 60 * 60_000);
+  });
+
+  it('prunes an expired row on the next write, without needing it read first', () => {
+    store.snooze('clickup:a', base + 2000);
+    vi.setSystemTime(base + 5000);
+    // Nothing ever calls snoozedUntil('clickup:a', ...) here, so the only way this can come
+    // back undefined is if the write to `b` pruned the expired row for `a`.
+    store.snooze('clickup:b', base + 6000);
+    expect(store.snoozedUntil('clickup:a', 0)).toBeUndefined();
   });
 });
 

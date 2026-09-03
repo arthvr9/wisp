@@ -6,7 +6,7 @@ import type { Config } from '../shared/config';
 import { IPC } from '../shared/ipc';
 import type { BubbleMessage, DragStart, EnvironmentInfo, WispApi } from '../shared/ipc';
 import type { Mood } from '../shared/mood';
-import type { Signal, SignalsStatus } from '../shared/signals';
+import type { DayItem, Signal, SignalsStatus } from '../shared/signals';
 import type { SpeechStatus } from '../shared/speech';
 
 function subscribe(channel: string, listener: (payload: unknown) => void): () => void {
@@ -72,6 +72,29 @@ const api: WispApi = {
   },
   listSignals() {
     return ipcRenderer.invoke(IPC.signalsList) as Promise<Signal[]>;
+  },
+  listDay() {
+    return ipcRenderer.invoke(IPC.dayList) as Promise<DayItem[]>;
+  },
+  onDayChanged(listener) {
+    return subscribe(IPC.dayChanged, (items) => {
+      listener(items as DayItem[]);
+    });
+  },
+  runAction(signalId, action) {
+    return ipcRenderer.invoke(IPC.actionRun, signalId, action) as Promise<DayItem[]>;
+  },
+  togglePanel() {
+    ipcRenderer.send(IPC.panelToggle);
+  },
+  closePanel() {
+    ipcRenderer.send(IPC.panelClose);
+  },
+  setSecret(name, value) {
+    return ipcRenderer.invoke(IPC.secretSet, name, value) as Promise<Record<string, boolean>>;
+  },
+  secretStatus() {
+    return ipcRenderer.invoke(IPC.secretStatus) as Promise<Record<string, boolean>>;
   },
   getSpeechStatus() {
     return ipcRenderer.invoke(IPC.speechStatusGet) as Promise<SpeechStatus>;
