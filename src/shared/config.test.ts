@@ -13,6 +13,7 @@ describe('normalizeConfig', () => {
     const c = normalizeConfig({ name: '  Momo  ', autostart: true, followCursor: false });
     expect(c).toEqual({
       name: 'Momo',
+      mascot: 'wisp',
       locale: 'en',
       autostart: true,
       followCursor: false,
@@ -21,7 +22,7 @@ describe('normalizeConfig', () => {
       quietHours: { enabled: true, start: '19:00', end: '08:00' },
       budget: { maxPerHour: 3, maxPerDay: 12 },
       speech: { provider: 'off', baseUrl: '', model: '' },
-      outlook: { clientId: '', tenant: 'common', warnMinutes: 5, silenceDuringMeetings: true },
+      calendar: { icsUrl: '', warnMinutes: 5, silenceDuringMeetings: true },
       gruply: { baseUrl: 'https://api.gruply.com.br/api', email: '' },
     });
     expect(normalizeConfig({ name: 'x'.repeat(40) }).name).toHaveLength(24);

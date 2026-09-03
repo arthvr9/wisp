@@ -1,7 +1,7 @@
 import type { SilenceSource } from './nudges';
 
-export type SignalSource = 'clickup' | 'outlook' | 'gruply';
-export const SIGNAL_SOURCES: readonly SignalSource[] = ['clickup', 'outlook', 'gruply'];
+export type SignalSource = 'clickup' | 'calendar' | 'gruply';
+export const SIGNAL_SOURCES: readonly SignalSource[] = ['clickup', 'calendar', 'gruply'];
 export type SignalKind = 'task-due' | 'meeting';
 
 export interface Meeting {

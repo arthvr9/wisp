@@ -241,8 +241,8 @@ describe('meeting payload', () => {
   it('survives a round trip through the database', () => {
     const store = new SignalStore(':memory:');
     const meeting: Signal = {
-      id: 'outlook:m1',
-      source: 'outlook',
+      id: 'calendar:m1',
+      source: 'calendar',
       kind: 'meeting',
       title: 'Standup',
       dueAt: 1000,
@@ -251,8 +251,8 @@ describe('meeting payload', () => {
       listName: 'Calendar',
       meeting: { endsAt: 2000, accepted: true, allDay: false, organizer: 'a@b.c', busy: true },
     };
-    store.replaceAll('outlook', [meeting], 1);
-    expect(store.list('outlook')[0]?.meeting).toEqual(meeting.meeting);
+    store.replaceAll('calendar', [meeting], 1);
+    expect(store.list('calendar')[0]?.meeting).toEqual(meeting.meeting);
     store.close();
   });
 });
@@ -282,8 +282,8 @@ describe('migrating an older database', () => {
 
     const store = new SignalStore(file);
     const meeting: Signal = {
-      id: 'outlook:new',
-      source: 'outlook',
+      id: 'calendar:new',
+      source: 'calendar',
       kind: 'meeting',
       title: 'Standup',
       dueAt: 20,
@@ -292,8 +292,8 @@ describe('migrating an older database', () => {
       listName: 'Calendar',
       meeting: { endsAt: 30, accepted: true, allDay: false, organizer: 'a@b.c', busy: true },
     };
-    expect(() => store.replaceAll('outlook', [meeting], 2)).not.toThrow();
-    expect(store.list('outlook')[0]?.meeting?.endsAt).toBe(30);
+    expect(() => store.replaceAll('calendar', [meeting], 2)).not.toThrow();
+    expect(store.list('calendar')[0]?.meeting?.endsAt).toBe(30);
     expect(store.list('clickup')).toHaveLength(1);
     store.close();
   });

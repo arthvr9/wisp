@@ -29,8 +29,8 @@ function sig(id: string, dueAt: number): Signal {
 
 function meetingSig(id: string, dueAt: number, overrides: Partial<Meeting> = {}): Signal {
   return {
-    id: `outlook:${id}`,
-    source: 'outlook',
+    id: `calendar:${id}`,
+    source: 'calendar',
     kind: 'meeting',
     title: id,
     dueAt,
@@ -52,7 +52,7 @@ function record(
   id: string,
   kind: NudgeRecord['kind'],
   at: number,
-  source: 'clickup' | 'outlook' = 'clickup',
+  source: 'clickup' | 'calendar' = 'clickup',
 ): NudgeRecord {
   return { signalId: `${source}:${id}`, kind, at };
 }
@@ -206,30 +206,30 @@ describe('decideNudges rules', () => {
 describe('decideNudges meeting rules', () => {
   it('meeting-now: within the last minute, urgent, once', () => {
     expect(kinds({ signals: [meetingSig('a', now - 30_000)] })).toEqual([
-      ['outlook:a', 'meeting-now', 'urgent', 0, 0],
+      ['calendar:a', 'meeting-now', 'urgent', 0, 0],
     ]);
     expect(kinds({ signals: [meetingSig('a', now)] })).toEqual([
-      ['outlook:a', 'meeting-now', 'urgent', 0, 0],
+      ['calendar:a', 'meeting-now', 'urgent', 0, 0],
     ]);
     expect(
       kinds({
         signals: [meetingSig('a', now)],
-        history: [record('a', 'meeting-now', now - 20_000, 'outlook')],
+        history: [record('a', 'meeting-now', now - 20_000, 'calendar')],
       }),
     ).toEqual([]);
   });
 
   it('meeting-soon: inside the warning window, normal, once', () => {
     expect(kinds({ signals: [meetingSig('a', now + 5 * minute)] })).toEqual([
-      ['outlook:a', 'meeting-soon', 'normal', 5, 0],
+      ['calendar:a', 'meeting-soon', 'normal', 5, 0],
     ]);
     expect(kinds({ signals: [meetingSig('a', now + meetingWarnMs)] })).toEqual([
-      ['outlook:a', 'meeting-soon', 'normal', meetingWarnMs / minute, 0],
+      ['calendar:a', 'meeting-soon', 'normal', meetingWarnMs / minute, 0],
     ]);
     expect(
       kinds({
         signals: [meetingSig('a', now + 5 * minute)],
-        history: [record('a', 'meeting-soon', now - 2 * minute, 'outlook')],
+        history: [record('a', 'meeting-soon', now - 2 * minute, 'calendar')],
       }),
     ).toEqual([]);
   });
@@ -237,7 +237,7 @@ describe('decideNudges meeting rules', () => {
   it('meeting-soon never matches when meetingWarnMs is 0, only meeting-now', () => {
     expect(kinds({ signals: [meetingSig('a', now + minute)], meetingWarnMs: 0 })).toEqual([]);
     expect(kinds({ signals: [meetingSig('a', now)], meetingWarnMs: 0 })).toEqual([
-      ['outlook:a', 'meeting-now', 'urgent', 0, 0],
+      ['calendar:a', 'meeting-now', 'urgent', 0, 0],
     ]);
   });
 
@@ -255,7 +255,7 @@ describe('decideNudges meeting rules', () => {
 
   it('still warns for a meeting marked free rather than busy', () => {
     expect(kinds({ signals: [meetingSig('a', now + 5 * minute, { busy: false })] })).toEqual([
-      ['outlook:a', 'meeting-soon', 'normal', 5, 0],
+      ['calendar:a', 'meeting-soon', 'normal', 5, 0],
     ]);
   });
 

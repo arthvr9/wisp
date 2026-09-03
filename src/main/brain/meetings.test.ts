@@ -9,8 +9,8 @@ const now = Date.UTC(2026, 8, 2, 10);
 
 function meetingSig(id: string, dueAt: number, overrides: Partial<Meeting> = {}): Signal {
   return {
-    id: `outlook:${id}`,
-    source: 'outlook',
+    id: `calendar:${id}`,
+    source: 'calendar',
     kind: 'meeting',
     title: id,
     dueAt,

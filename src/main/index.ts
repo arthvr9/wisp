@@ -21,9 +21,9 @@ import type { DisplayArea, Target } from './brain/movement';
 import { ConfigStore } from './config';
 import {
   ConnectorHub,
+  createCalendarConnector,
   createClickUpConnector,
   createGruplyConnector,
-  createOutlookConnector,
 } from './connectors';
 import { meetingWindows } from './brain/meetings';
 import { loadDotEnv } from './env';
@@ -195,26 +195,26 @@ void app.whenReady().then(async () => {
   const connectors: ConnectorHub = new ConnectorHub({
     connectors: [
       createClickUpConnector({ secrets, openExternal, version: app.getVersion() }),
-      createOutlookConnector({ secrets, openExternal, config: () => config.get().outlook }),
+      createCalendarConnector({ config: () => config.get().calendar }),
       createGruplyConnector({ token: gruplyToken, config: () => config.get().gruply }),
     ],
     secrets,
     pollMinutes: () => config.get().pollMinutes,
     dueSoonMinutes: () => config.get().dueSoonMinutes,
-    meetingWarnMs: () => config.get().outlook.warnMinutes * 60_000,
+    meetingWarnMs: () => config.get().calendar.warnMinutes * 60_000,
     budget: () => config.get().budget,
     silence: (nowMs) => [
       ...quietHoursWindows(config.get().quietHours, nowMs),
       ...silence.windows(nowMs),
     ],
     extraSilence: (signals) =>
-      meetingWindows(signals, { enabled: config.get().outlook.silenceDuringMeetings }),
+      meetingWindows(signals, { enabled: config.get().calendar.silenceDuringMeetings }),
     silenceStatus: (nowMs) => {
       const windows = [
         ...quietHoursWindows(config.get().quietHours, nowMs),
         ...silence.windows(nowMs),
         ...meetingWindows(connectors.signals(), {
-          enabled: config.get().outlook.silenceDuringMeetings,
+          enabled: config.get().calendar.silenceDuringMeetings,
         }),
       ];
       return {
@@ -381,6 +381,7 @@ void app.whenReady().then(async () => {
 
   const applyConfig = (c: Config) => {
     t = translator(c.locale, { name: c.name });
+    tray?.setMascot(c.mascot);
     try {
       setAutostart(c.autostart);
     } catch (err) {

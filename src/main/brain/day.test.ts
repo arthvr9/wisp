@@ -25,8 +25,8 @@ function taskSig(id: string, dueAt: number, overrides: Partial<Signal> = {}): Si
 
 function meetingSig(id: string, dueAt: number, overrides: Partial<Meeting> = {}): Signal {
   return {
-    id: `outlook:${id}`,
-    source: 'outlook',
+    id: `calendar:${id}`,
+    source: 'calendar',
     kind: 'meeting',
     title: id,
     dueAt,
@@ -86,7 +86,7 @@ describe('dayItems', () => {
   it('keeps a meeting starting before the end of the day', () => {
     const meeting = meetingSig('a', now + hour);
     const [item] = dayItems([meeting], opts());
-    expect(item?.signal.id).toBe('outlook:a');
+    expect(item?.signal.id).toBe('calendar:a');
     expect(item?.overdue).toBe(false);
   });
 
@@ -128,7 +128,7 @@ describe('dayItems', () => {
     const canComplete = (source: SignalSource) => source === 'clickup';
     const items = dayItems([task, meeting], opts({ canComplete }));
     expect(items.find((i) => i.signal.id === 'clickup:a')?.actions.complete).toBe(true);
-    expect(items.find((i) => i.signal.id === 'outlook:b')?.actions.complete).toBe(false);
+    expect(items.find((i) => i.signal.id === 'calendar:b')?.actions.complete).toBe(false);
   });
 
   it('withholds complete when the source cannot write', () => {

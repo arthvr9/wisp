@@ -1,11 +1,13 @@
 import type { NudgeBudget, QuietHours } from './nudges';
+import { isMascot } from './mascots';
+import type { MascotName } from './mascots';
 import type { SpeechConfig } from './speech';
 
 export type Locale = 'en';
 
-export interface OutlookConfig {
-  clientId: string;
-  tenant: string;
+export interface CalendarConfig {
+  /** A published ICS URL. Outlook, Google Calendar and anything else that publishes one. */
+  icsUrl: string;
   warnMinutes: number;
   silenceDuringMeetings: boolean;
 }
@@ -17,6 +19,7 @@ export interface GruplyConfig {
 
 export interface Config {
   name: string;
+  mascot: MascotName;
   locale: Locale;
   autostart: boolean;
   followCursor: boolean;
@@ -25,12 +28,13 @@ export interface Config {
   quietHours: QuietHours;
   budget: NudgeBudget;
   speech: SpeechConfig;
-  outlook: OutlookConfig;
+  calendar: CalendarConfig;
   gruply: GruplyConfig;
 }
 
 export const defaultConfig: Config = {
   name: 'Wisp',
+  mascot: 'wisp',
   locale: 'en',
   autostart: false,
   followCursor: true,
@@ -39,7 +43,7 @@ export const defaultConfig: Config = {
   quietHours: { enabled: true, start: '19:00', end: '08:00' },
   budget: { maxPerHour: 3, maxPerDay: 12 },
   speech: { provider: 'off', baseUrl: '', model: '' },
-  outlook: { clientId: '', tenant: 'common', warnMinutes: 5, silenceDuringMeetings: true },
+  calendar: { icsUrl: '', warnMinutes: 5, silenceDuringMeetings: true },
   gruply: { baseUrl: 'https://api.gruply.com.br/api', email: '' },
 };
 
@@ -53,6 +57,7 @@ export function normalizeConfig(raw: unknown): Config {
   const r = raw as Record<string, unknown>;
   if (typeof r.name === 'string' && r.name.trim().length > 0) c.name = r.name.trim().slice(0, 24);
   if (r.locale === 'en') c.locale = r.locale;
+  if (isMascot(r.mascot)) c.mascot = r.mascot;
   if (typeof r.autostart === 'boolean') c.autostart = r.autostart;
   if (typeof r.followCursor === 'boolean') c.followCursor = r.followCursor;
   if (typeof r.dueSoonMinutes === 'number' && r.dueSoonMinutes >= 1 && r.dueSoonMinutes <= 1440)
@@ -77,20 +82,15 @@ export function normalizeConfig(raw: unknown): Config {
       model: typeof sp.model === 'string' ? sp.model.trim().slice(0, 100) : c.speech.model,
     };
   }
-  if (typeof r.outlook === 'object' && r.outlook !== null) {
-    const o = r.outlook as Record<string, unknown>;
-    c.outlook = {
-      clientId:
-        typeof o.clientId === 'string' ? o.clientId.trim().slice(0, 100) : c.outlook.clientId,
-      tenant:
-        typeof o.tenant === 'string' && o.tenant.trim().length > 0
-          ? o.tenant.trim().slice(0, 100)
-          : c.outlook.tenant,
-      warnMinutes: intIn(o.warnMinutes, 0, 120) ?? c.outlook.warnMinutes,
+  if (typeof r.calendar === 'object' && r.calendar !== null) {
+    const cal = r.calendar as Record<string, unknown>;
+    c.calendar = {
+      icsUrl: typeof cal.icsUrl === 'string' ? cal.icsUrl.trim().slice(0, 500) : c.calendar.icsUrl,
+      warnMinutes: intIn(cal.warnMinutes, 0, 120) ?? c.calendar.warnMinutes,
       silenceDuringMeetings:
-        typeof o.silenceDuringMeetings === 'boolean'
-          ? o.silenceDuringMeetings
-          : c.outlook.silenceDuringMeetings,
+        typeof cal.silenceDuringMeetings === 'boolean'
+          ? cal.silenceDuringMeetings
+          : c.calendar.silenceDuringMeetings,
     };
   }
   if (typeof r.gruply === 'object' && r.gruply !== null) {

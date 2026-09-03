@@ -34,8 +34,8 @@ function taskSig(id: string, dueAt: number, overrides: Partial<Signal> = {}): Si
 
 function meetingSig(id: string, dueAt: number, overrides: Partial<Signal> = {}): Signal {
   return {
-    id: `outlook:${id}`,
-    source: 'outlook',
+    id: `calendar:${id}`,
+    source: 'calendar',
     kind: 'meeting',
     title: `Meeting ${id}`,
     dueAt,
@@ -136,7 +136,7 @@ describe('ConnectorHub', () => {
     hub.start();
     await hub.syncNow();
 
-    await expect(hub.runAction('outlook:a', 'complete', now)).rejects.toThrow();
+    await expect(hub.runAction('calendar:a', 'complete', now)).rejects.toThrow();
   });
 
   it('silences the next decision for a snoozed signal', async () => {
