@@ -53,14 +53,14 @@ const api: WispApi = {
       listener(m as BubbleMessage | null);
     });
   },
-  clickupConnect() {
-    return ipcRenderer.invoke(IPC.clickupConnect) as Promise<SignalsStatus>;
+  connect(source) {
+    return ipcRenderer.invoke(IPC.connectorConnect, source) as Promise<SignalsStatus>;
   },
-  clickupDisconnect() {
-    return ipcRenderer.invoke(IPC.clickupDisconnect) as Promise<SignalsStatus>;
+  disconnect(source) {
+    return ipcRenderer.invoke(IPC.connectorDisconnect, source) as Promise<SignalsStatus>;
   },
-  clickupSyncNow() {
-    return ipcRenderer.invoke(IPC.clickupSyncNow) as Promise<SignalsStatus>;
+  syncNow() {
+    return ipcRenderer.invoke(IPC.syncNow) as Promise<SignalsStatus>;
   },
   getSignalsStatus() {
     return ipcRenderer.invoke(IPC.signalsStatusGet) as Promise<SignalsStatus>;

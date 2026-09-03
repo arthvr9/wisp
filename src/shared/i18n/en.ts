@@ -39,6 +39,19 @@ export const en = {
   'settings.clickup.secrets':
     'No keyring on this session, so tokens are stored as plain text in the config directory.',
   'settings.clickup.dueSoon': 'Minutes of warning before a due date',
+  'settings.outlook': 'Outlook calendar',
+  'settings.outlook.hint':
+    'Reads your calendar through Microsoft Graph, so meetings can quiet {name} down and warn you before they start. Nothing is written.',
+  'settings.outlook.clientId': 'Application (client) ID',
+  'settings.outlook.clientId.hint':
+    'From an app registration in Entra ID, as a public client with the redirect URI http://localhost. Wisp asks for Calendars.Read only.',
+  'settings.outlook.tenant': 'Directory (tenant) ID',
+  'settings.outlook.tenant.hint': 'Leave common unless your organisation requires its own tenant.',
+  'settings.outlook.warn': 'Minutes of warning before a meeting',
+  'settings.outlook.silence': 'Stay quiet during an accepted meeting',
+  'settings.outlook.silence.hint': 'A task due right now still gets through.',
+  'settings.outlook.needsClientId': 'Enter a client ID before connecting.',
+  'settings.outlook.connected': 'Connected. {count} meetings ahead.',
   'settings.nudges': 'Interruptions',
   'settings.nudges.hint':
     'Quiet hours silence everything except a task due right now. GNOME Do Not Disturb and a snooze silence everything.',
@@ -64,6 +77,8 @@ export const en = {
   'phrase.overdue': 'Overdue: {title}',
   'phrase.overdueAgain': 'Still overdue: {title}',
   'phrase.dueToday': 'Due today: {title}',
+  'phrase.meetingSoon': 'In {minutes} min: {title}',
+  'phrase.meetingNow': 'Starting now: {title}',
   'phrase.connected': '{name} can see your tasks now.',
   'phrase.celebrate.1': 'Done: {title}',
   'phrase.celebrate.2': '{count} down. Keep going.',

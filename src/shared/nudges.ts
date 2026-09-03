@@ -9,7 +9,8 @@ export interface SilenceWindow {
 
 export type Urgency = 'low' | 'normal' | 'urgent';
 
-export type NudgeKind = 'due-soon' | 'due-now' | 'overdue' | 'due-today';
+export type NudgeKind =
+  'due-soon' | 'due-now' | 'overdue' | 'due-today' | 'meeting-soon' | 'meeting-now';
 
 export interface Nudge {
   signalId: string;
