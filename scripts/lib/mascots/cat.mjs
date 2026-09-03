@@ -3,20 +3,24 @@
 // out of the top of it, green eyes with a dark slit pupil, one pink nose as the only warm colour
 // on the face, a cream bib down the chest and a thin hooked tail.
 //
-// Two rules the reference is strict about and the art must not lose:
-//   - the tail leaves the top of the rump (or, sitting, lies along the ground) and never runs
-//     beside a leg. It is four pixels wide, five where it meets the body, and hooks at the tip.
-//     Anything thinner is all outline once the mask is painted and reads as a wire.
-//   - the body carries volume. The profile body is nine to eleven pixels deep on four pixel
-//     legs; a shallow body on thin legs reads as a stray, not as a cat.
+// Four rules the reference is strict about and the art must not lose:
+//   - the tail leaves the rump on the diagonal (or, sitting, lies along the ground) and never
+//     runs beside a leg. It is four pixels wide and every row of the curve steps one pixel, so
+//     it reads as a tail rather than as a hook. Anything thinner is all outline once the mask
+//     is painted and reads as a wire.
+//   - the body is compact and carries volume. The profile body is eighteen long and twelve
+//     deep, half again as long as it is deep; at twice as long it reads as a dachshund, and on
+//     thin legs under a shallow body it reads as a stray.
 //   - the head sits on the shoulders. Every column the head occupies has body under it starting
 //     at or above the lowest head pixel of that column, so no row of background can appear
 //     between jaw and chest. One transparent row there is three screen pixels at 1:3 and it
 //     reads as a severed head, so the top line of a profile body runs flat under the whole
 //     head and only steps down behind it.
+//   - the hind legs bend. The pair steps one pixel back for its last two rows and the front pair
+//     stays straight; four identical posts read as furniture.
 //
-// Frames are pixel maps: `#` is fur, `l` a cream patch, `s` a shaded one, `p` pink, `-` a crease
-// inside the silhouette. Each layer (far legs behind the body, the body with its tail and near
+// Frames are pixel maps: `#` is fur, `l` a cream patch, `p` pink, `-` a crease inside the
+// silhouette. Each layer (far legs behind the body, the body with its tail and near
 // legs, the head, whatever wraps in front) is one mask outlined in one pass, so the parts of a
 // layer share an outline instead of drawing a seam between them.
 //
@@ -35,7 +39,6 @@ import { FRAME } from '../sheet.mjs';
 const PALETTE = {
   outline: [16, 16, 22, 255],
   body: [58, 58, 70, 255],
-  shade: [36, 36, 46, 255],
   light: [238, 226, 200, 255],
   pink: [226, 146, 158, 255],
   eye: [124, 220, 128, 255],
@@ -78,11 +81,11 @@ const EARS = {
 
 const GROUND = 28;
 
-// Profile standing body: eighteen long and twelve deep. Half again as long as it is deep, which
-// is a compact cat; at twenty two it read as a dachshund. The
-// top line is flat across every column the head covers and steps down only behind it, which is
-// what buries the jaw in the shoulder. The head is drawn over it, so those rows are mostly
-// never seen; what they buy is a silhouette with no seam.
+// Profile standing body: eighteen long and twelve deep, half again as long as it is deep. At
+// twenty two it read as a dachshund, a horizontal sausage on four sticks. The top line is flat
+// across every column the head covers and steps down only behind it, which is what buries the
+// jaw in the shoulder; the head is drawn over it, so those rows are mostly never seen. What they
+// buy is a silhouette with no seam.
 const STAND_BODY = [
   '......############',
   '....##############',
@@ -104,87 +107,88 @@ const STAND_BODY_AT = { x: 9, y: 13 };
 // flank reads as a saddle on a two colour cat, not as a black cat with a pale chest.
 const STAND_MARKS = ['..l', '.ll', '.ll', 'lll', 'lll', '.ll'];
 const STAND_MARKS_AT = { x: 23, y: 16 };
-const STAND_BELLY = ['..lllll..', '.lllllll.'];
-const STAND_BELLY_AT = { x: 14, y: 22 };
+const STAND_BELLY = ['llllllllll'];
+const STAND_BELLY_AT = { x: 13, y: 23 };
 
-// The walking tail: out of the top of the rump, up and back, tip hooking forward. Four pixels
-// thick, five where it meets the body, and every row of it is above the line of the back.
+// The walking tail: a four pixel arc that leaves the rump on the diagonal, sweeps up and back
+// and hooks forward at the tip. Every row steps one pixel, so the curve is round: a vertical
+// stack with a bar across the top is a hook, not a tail, and a base that meets the rump at
+// ninety degrees is a limb bolted on. Every row of it is above the line of the back.
 const TAIL_UP = [
-  '...#####..',
-  '.#####....',
-  '.####.....',
-  '.####.....',
-  '..####....',
-  '..#####...',
-  '...#####..',
-  '...#####..',
-  '...#####..',
-  '...#####..',
+  '..####..',
+  '.####...',
+  '####....',
+  '####....',
+  '####....',
+  '.####...',
+  '..####..',
+  '...####.',
+  '....####',
 ];
-const TAIL_UP_AT = { x: 5, y: 10 };
+const TAIL_UP_AT = { x: 6, y: 8 };
 
-// The alert tail: straight up, still thicker at the base and still hooked at the tip, because a
-// constant width column reads as a plank rather than as an animal.
+// The alert tail: up, with the tip stepped forward and the base still curving out of the rump on
+// the diagonal, because a constant width column joined at ninety degrees reads as a plank.
 const TAIL_STRAIGHT = [
+  '.####...',
+  '####....',
+  '####....',
+  '####....',
+  '####....',
+  '####....',
+  '####....',
+  '####....',
+  '.####...',
   '..####..',
-  '..####..',
-  '.#####..',
-  '.####...',
-  '.####...',
-  '.####...',
-  '.####...',
-  '.####...',
-  '.####...',
-  '.####...',
-  '.#####..',
-  '.#####..',
-  '.#####..',
-  '.#####..',
+  '...####.',
+  '....####',
 ];
-const TAIL_STRAIGHT_AT = { x: 7, y: 6 };
+const TAIL_STRAIGHT_AT = { x: 7, y: 5 };
 
 // Sitting: a wedge with a vertical chest at the front and the back curving down to a heavy
 // rump, steep at the shoulder and flattening at the base, which is the shape a cat actually
 // makes. A straight forty five degree back reads as a doorstop.
 const SIT_BODY = [
-  '........########',
-  '......##########',
-  '.....###########',
-  '....############',
-  '...#############',
-  '..##############',
-  '..##############',
-  '.###############',
-  '.###############',
-  '.###############',
-  '################',
-  '################',
-  '################',
-  '################',
-  '.##############.',
-  '.##############.',
+  '.......############',
+  '.....##############',
+  '....###############',
+  '...################',
+  '..#################',
+  '..#################',
+  '.##################',
+  '.##################',
+  '###################',
+  '###################',
+  '###################',
+  '###################',
+  '###################',
+  '###################',
+  '###################',
+  '###################',
+  '###################',
+  '.#################.',
 ];
-const SIT_BODY_AT = { x: 11, y: 13 };
+const SIT_BODY_AT = { x: 9, y: 11 };
 
 // The bib: a wedge that starts under the chin and widens a little down the chest, plus the pale
 // front paw the cat sits on. Both touch the front of the animal; cream that starts in the middle
 // of the flank reads as a marking on a different cat.
 const SIT_MARKS = ['...l', '..ll', '..ll', '.lll', '.lll', 'llll', 'llll', '.lll', '..ll'];
-const SIT_MARKS_AT = { x: 23, y: 16 };
+const SIT_MARKS_AT = { x: 23, y: 13 };
 const SIT_PAW = ['.lll'];
 const SIT_PAW_AT = { x: 23, y: 27 };
 
 // The crease that separates the front leg from the haunch behind it.
 const SIT_CREASE = ['-', '-', '-', '-', '-', '-', '-', '-'];
-const SIT_CREASE_AT = { x: 21, y: 21 };
+const SIT_CREASE_AT = { x: 22, y: 20 };
 
 // A sitting cat lays its tail along the ground and curls the tip up. Down there it cannot be
 // confused with a leg (a sitting cat shows none), it widens the silhouette the way the sitting
 // poses in the reference do, and the flick has somewhere to go: the tip only.
 const TAIL_SIT = [
-  '..####....',
-  '.#####....',
-  '.#####....',
+  '..###.....',
+  '.####.....',
+  '.####.....',
   '.####.....',
   '.####.....',
   '.#####....',
@@ -203,7 +207,7 @@ const TAIL_SIT_FLICK = [
   '..########',
   '...#######',
 ];
-const TAIL_SIT_AT = { x: 6, y: 20 };
+const TAIL_SIT_AT = { x: 1, y: 20 };
 
 // Asleep: a mound, higher at the rump, with the head down at the front. The tail is stretched
 // out behind with the tip hooked up, well clear of the mound, because a tail tucked into a
@@ -350,7 +354,7 @@ function stamp(mask, art, width, height) {
 }
 
 /** @type {Record<string, string>} */
-const DETAIL = { l: 'light', s: 'shade', p: 'pink', '-': 'outline' };
+const DETAIL = { l: 'light', p: 'pink', '-': 'outline' };
 
 /**
  * The `l`, `s`, `p` and `-` cells, painted after the outline pass so they sit inside the
@@ -384,20 +388,28 @@ function paintParts(canvas, parts) {
 }
 
 /**
- * A leg. Near legs are four pixels wide and end in a two pixel pale paw, far legs are three and
+ * A leg. Near legs are four pixels wide and end in a two pixel pale paw, far legs are two and
  * stay dark all the way down, which is the cheapest way to say which pair is closer.
- * @param {number} x
+ *
+ * A hind leg steps one pixel back for its last two rows. That is the hock, and a cat has one:
+ * four identical straight posts read as furniture, and the difference costs two pixels.
+ * @param {number} x rearmost column, which the two rows below the hock stand on
  * @param {number} top
  * @param {number} bottom paw row
  * @param {'near' | 'far'} kind
+ * @param {boolean} [hock]
  * @returns {Art}
  */
-function legArt(x, top, bottom, kind) {
+function legArt(x, top, bottom, kind, hock = false) {
   const near = kind === 'near';
+  const shaft = near ? '####' : '##';
+  const paw = near ? '#ll#' : '##';
   /** @type {string[]} */
   const rows = [];
-  for (let y = top; y <= bottom; y++) rows.push(near ? '####' : '#s#');
-  if (near) rows[rows.length - 1] = '#ll#';
+  for (let y = top; y <= bottom; y++) {
+    const cells = y === bottom ? paw : shaft;
+    rows.push(hock && y < bottom - 1 ? `.${cells}` : cells);
+  }
   return { x, y: top, rows };
 }
 
@@ -527,10 +539,10 @@ function headOrigin(spec) {
 // is not part of the cycle: it is the stance the alert pose stands in.
 /** @type {{ hind: number; front: number; lift: number; hindLift: number; frontLift: number }[]} */
 const LEG_STEPS = [
-  { hind: 2, front: -1, lift: 0, hindLift: 0, frontLift: 0 },
-  { hind: 1, front: 0, lift: 1, hindLift: 3, frontLift: 0 },
+  { hind: 1, front: 0, lift: 0, hindLift: 0, frontLift: 0 },
+  { hind: 1, front: 0, lift: 1, hindLift: 2, frontLift: 0 },
   { hind: 0, front: 1, lift: 0, hindLift: 0, frontLift: 0 },
-  { hind: 1, front: 0, lift: 1, hindLift: 0, frontLift: 3 },
+  { hind: 0, front: 1, lift: 1, hindLift: 0, frontLift: 2 },
   { hind: 0, front: 0, lift: 0, hindLift: 0, frontLift: 0 },
 ];
 
@@ -555,12 +567,12 @@ function standLayers(spec) {
     ? { ...TAIL_STRAIGHT_AT, rows: TAIL_STRAIGHT }
     : { ...TAIL_UP_AT, rows: TAIL_UP };
   return {
-    behind: [legArt(18, top, far, 'far'), legArt(10, top, far, 'far')],
+    behind: [legArt(20, top, far, 'far'), legArt(10, top, far, 'far', true)],
     body: [
       { ...STAND_BODY_AT, rows: STAND_BODY },
       shift(tail, spec.tailDx ?? 0, spec.tailDy ?? 0),
-      legArt(22 + step.front, top, near - step.frontLift, 'near'),
-      legArt(13 + step.hind, top, near - step.hindLift, 'near'),
+      legArt(23 + step.front, top, near - step.frontLift, 'near'),
+      legArt(13 + step.hind, top, near - step.hindLift, 'near', true),
       { ...STAND_BELLY_AT, rows: STAND_BELLY },
       { ...STAND_MARKS_AT, rows: STAND_MARKS },
     ],
