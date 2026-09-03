@@ -51,3 +51,11 @@ Nothing is signed and nothing but the automatic `GITHUB_TOKEN` is needed.
   unsigned deb installs with a warning about an unverified origin, and an unsigned Windows
   installer triggers SmartScreen. Removing the Windows warning needs an EV certificate, which
   this project does not have.
+
+## The GIFs in docs/images
+
+`npm run sprites` also regenerates the animated GIFs, and those need Aseprite, which is a paid
+app compiled locally rather than something a runner has. When it is missing the GIF step says
+so and leaves the committed files alone, so the sprite sheets are still checked against their
+generator on CI. Regenerate the GIFs on a machine that has Aseprite, or point `WISP_ASEPRITE`
+at the binary. Pass `--require-aseprite` to make its absence an error instead.

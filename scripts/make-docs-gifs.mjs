@@ -15,7 +15,7 @@ import {
 } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
-import { env, exit, stderr, stdout } from 'node:process';
+import { argv, env, exit, stderr, stdout } from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -394,7 +394,7 @@ function luaFor(spec) {
 /**
  * Aseprite is not on PATH in a normal install, so look where it usually lands. WISP_ASEPRITE
  * overrides for CI.
- * @returns {string}
+ * @returns {string | undefined}
  */
 function findAseprite() {
   /** @type {string[]} */
@@ -405,15 +405,7 @@ function findAseprite() {
   for (const dir of (env.PATH ?? '').split(delimiter)) {
     if (dir) candidates.push(join(dir, 'aseprite'));
   }
-  const found = candidates.find((candidate) => existsSync(candidate));
-  if (!found) {
-    throw new Error(
-      'Aseprite was not found, and it is what writes the GIFs (there is no ffmpeg here).\n' +
-        'Install it, or point WISP_ASEPRITE at the binary. Looked at:\n' +
-        candidates.map((candidate) => `  ${candidate}`).join('\n'),
-    );
-  }
-  return found;
+  return candidates.find((candidate) => existsSync(candidate));
 }
 
 // The app advances the walk frame by ground covered, not by the sheet's own durations, so a
@@ -450,6 +442,20 @@ function render(binary, workDir, spec) {
 
 function main() {
   const binary = findAseprite();
+  // The GIFs need Aseprite, which is a paid app compiled locally and is not on a CI runner.
+  // The committed GIFs stay as they are rather than failing the whole art regeneration, which
+  // is also what lets CI check that the sprite sheets match their generator.
+  if (binary === undefined) {
+    const strict = argv.includes('--require-aseprite');
+    const message =
+      'Aseprite was not found, so the GIFs in docs/images were left as they are.\n' +
+      'Install it, or point WISP_ASEPRITE at the binary, then run this script again.\n';
+    if (!strict) {
+      stdout.write(message);
+      return;
+    }
+    throw new Error(message);
+  }
   mkdirSync(outDir, { recursive: true });
   const workDir = mkdtempSync(join(tmpdir(), 'wisp-gifs-'));
   try {
