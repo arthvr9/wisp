@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent, PointerEvent } from 'react';
 
-import type { PoseUpdate } from '../../shared/actor';
+import type { Pose, PoseUpdate } from '../../shared/actor';
 import { defaultConfig } from '../../shared/config';
+import type { Config } from '../../shared/config';
 import { isMascot } from '../../shared/mascots';
 import type { MascotName } from '../../shared/mascots';
+import { buildCustomSheet } from './custom-sheet';
 import { frameAt, frameAtPhase, parseSheet } from './sprites';
 import type { AsepriteJson, Frame, Sheet } from './sprites';
 
@@ -49,10 +51,16 @@ function sheetFor(mascot: MascotName): MascotSheet | undefined {
   return SHEETS[mascot] ?? SHEETS.wisp;
 }
 
+// These poses draw their own eyes: sleep and celebrate close them, pet narrows them and startle
+// opens them wide. The overlay repaints the whole eye band, so it would rub all four out. Dance
+// keeps the overlay on purpose, because the mood still has to show while it dances.
+const OWN_EYES: readonly Pose[] = ['sleep', 'celebrate', 'pet', 'startle'];
+
 // A left click that neither moved far nor took long opens the panel instead of being read as
 // the start of a drag.
 const CLICK_MAX_DISTANCE = 4;
 const CLICK_MAX_DURATION_MS = 400;
+const DOUBLE_CLICK_MS = 220;
 
 const GOLD = '#facc15';
 const GOLD_DARK = '#ca8a04';
@@ -90,13 +98,34 @@ function drawCelebration(ctx: CanvasRenderingContext2D, scale: number, intensity
 
 function drawFrame(
   ctx: CanvasRenderingContext2D,
-  image: HTMLImageElement,
+  source: CanvasImageSource,
   frame: Frame,
   dx = 0,
   dy = 0,
 ) {
   const scale = SIZE / frame.w;
-  ctx.drawImage(image, frame.x, frame.y, frame.w, frame.h, dx * scale, dy * scale, SIZE, SIZE);
+  ctx.drawImage(source, frame.x, frame.y, frame.w, frame.h, dx * scale, dy * scale, SIZE, SIZE);
+}
+
+/** The sheet the window draws from: the built-in art, or the built-in art with a drawing on it. */
+interface Art {
+  source: CanvasImageSource;
+  /** A drawing is composed after it decodes; a sheet straight off disk has to be waited for. */
+  ready: () => boolean;
+  sheet: Sheet;
+}
+
+async function drawnArt(entry: MascotSheet, slug: string): Promise<Art | null> {
+  const mascot = await window.wisp.loadCustomMascot(slug);
+  if (!mascot) return null;
+  const image = new Image();
+  image.src = entry.url;
+  await image.decode();
+  const composed = await buildCustomSheet(
+    { sheet: entry.sheet, image, width: image.naturalWidth, height: image.naturalHeight },
+    mascot,
+  );
+  return { source: composed.image, ready: () => true, sheet: composed.sheet };
 }
 
 // The sheet declares its stride in sprite pixels and the mascot walks in screen pixels, so the
@@ -115,28 +144,67 @@ interface PointerDown {
 
 export function Mascot() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const clickTimer = useRef<number | null>(null);
   const downRef = useRef<PointerDown | null>(null);
   const [dragging, setDragging] = useState(false);
   const [mascot, setMascot] = useState<MascotName>(defaultConfig.mascot);
+  const [customMascot, setCustomMascot] = useState(defaultConfig.customMascot);
+  const [drawn, setDrawn] = useState<{ key: string; art: Art } | null>(null);
+  const key = `${mascot}/${customMascot}`;
+
+  const builtIn = useMemo<Art | null>(() => {
+    const entry = sheetFor(mascot);
+    if (!entry) return null;
+    const image = new Image();
+    image.src = entry.url;
+    return {
+      source: image,
+      ready: () => image.complete && image.naturalWidth > 0,
+      sheet: entry.sheet,
+    };
+  }, [mascot]);
+
+  // The built-in art draws until the drawing is composed, and stays if it never is. An empty
+  // window would be a worse answer than the mascot the user had yesterday.
+  const art = drawn?.key === key ? drawn.art : builtIn;
 
   useEffect(() => {
-    void window.wisp.getConfig().then((config) => {
+    const apply = (config: Config) => {
       setMascot(config.mascot);
-    });
-    return window.wisp.onConfigChanged((config) => {
-      setMascot(config.mascot);
-    });
+      setCustomMascot(config.customMascot);
+    };
+    void window.wisp.getConfig().then(apply);
+    return window.wisp.onConfigChanged(apply);
   }, []);
+
+  useEffect(
+    () => () => {
+      if (clickTimer.current !== null) window.clearTimeout(clickTimer.current);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const entry = sheetFor(mascot);
+    if (!entry || customMascot.length === 0) return;
+    let alive = true;
+    void drawnArt(entry, customMascot)
+      .then((art) => {
+        if (alive && art) setDrawn({ key, art });
+      })
+      .catch((err: unknown) => {
+        console.error('The drawing could not be composed.', err);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [mascot, customMascot, key]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
-    const entry = sheetFor(mascot);
-    if (!canvas || !ctx || !entry) return;
-    const { url, sheet } = entry;
-
-    const image = new Image();
-    image.src = url;
+    if (!canvas || !ctx || !art) return;
+    const { source, sheet, ready } = art;
 
     let current: PoseUpdate = {
       pose: 'idle',
@@ -149,7 +217,7 @@ export function Mascot() {
 
     const draw = (now: number) => {
       handle = 0;
-      if (image.complete && image.naturalWidth > 0) {
+      if (ready()) {
         const speed = current.speedFactor > 0 ? current.speedFactor : 1;
         // Walking is driven by ground covered, which already carries the mood speed factor.
         // Every other pose is a clock, and there the factor still has to be applied by hand.
@@ -165,9 +233,9 @@ export function Mascot() {
           ctx.translate(SIZE, 0);
           ctx.scale(-1, 1);
         }
-        drawFrame(ctx, image, frame);
-        if (current.pose !== 'sleep' && current.pose !== 'celebrate') {
-          drawFrame(ctx, image, sheet.expressions[current.expression], frame.bobX, frame.bobY);
+        drawFrame(ctx, source, frame);
+        if (!OWN_EYES.includes(current.pose)) {
+          drawFrame(ctx, source, sheet.expressions[current.expression], frame.bobX, frame.bobY);
         }
         if (current.pose === 'celebrate' && current.intensity !== undefined) {
           drawCelebration(ctx, scale, current.intensity);
@@ -200,16 +268,14 @@ export function Mascot() {
       current = update;
     });
     document.addEventListener('visibilitychange', onVisibility);
-    image.addEventListener('load', schedule);
     schedule();
 
     return () => {
       stop();
       unsubscribe();
       document.removeEventListener('visibilitychange', onVisibility);
-      image.removeEventListener('load', schedule);
     };
-  }, [mascot]);
+  }, [art]);
 
   function onPointerDown(e: PointerEvent<HTMLCanvasElement>) {
     if (e.button !== 0) return;
@@ -230,9 +296,21 @@ export function Mascot() {
     if (!down || e.type !== 'pointerup') return;
     const distance = Math.hypot(e.clientX - down.x, e.clientY - down.y);
     const duration = performance.now() - down.time;
-    if (distance <= CLICK_MAX_DISTANCE && duration < CLICK_MAX_DURATION_MS) {
-      window.wisp.togglePanel();
+    if (distance > CLICK_MAX_DISTANCE || duration >= CLICK_MAX_DURATION_MS) return;
+
+    // A double click is petting, and petting must not leave the panel open behind it. The panel
+    // therefore waits out the double click window before opening. It is the cost of putting two
+    // gestures on one button, and 220ms is under what a person reads as a delay.
+    if (clickTimer.current !== null) {
+      window.clearTimeout(clickTimer.current);
+      clickTimer.current = null;
+      window.wisp.pet();
+      return;
     }
+    clickTimer.current = window.setTimeout(() => {
+      clickTimer.current = null;
+      window.wisp.togglePanel();
+    }, DOUBLE_CLICK_MS);
   }
 
   function onContextMenu(e: MouseEvent<HTMLCanvasElement>) {

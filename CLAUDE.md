@@ -109,6 +109,29 @@ transparent, non-focusable X11 window (through XWayland) that moves itself with 
 - The store keeps the meeting payload as JSON in one column. It is read back whole, never
   queried by its fields.
 
+## Reactions, night mode and hand drawn art
+
+Added after the roadmap closed. The rules that hold this together:
+
+- A reaction is not a nudge. Music, petting, being startled, a thrown landing and the lines that
+  mark the shape of a day carry no information, so none of them go through the nudge budget.
+  They still respect silence: quiet hours, Do Not Disturb and a meeting all shut them up.
+- A browser reports a video call exactly the way it reports a song. Browser audio is therefore
+  never trusted on its own, and counts only when the calendar says no meeting is running. A
+  dedicated music player is trusted directly. Getting this wrong means dancing during a call.
+- What the user is listening to is user content. It never reaches a log, an IPC payload to any
+  window, or a language model. The creature knows that music is on and nothing more.
+- Colour lives in `src/renderer/src/theme.css` and nowhere else. A hardcoded colour is invisible
+  in one of the two themes, so there is no such thing as a small exception to this.
+- Night mode is a switch the user throws. It follows neither the clock nor the system theme.
+- Poses added after art already existed are optional in a sheet. `sprites.ts` names a pose to
+  borrow for each of them, and the sheet generator leaves the tag out rather than failing. This
+  is the same mechanism that lets a hand drawn mascot ship two poses instead of ten.
+- A slug for a hand drawn mascot arrives from the renderer and is joined onto a path. It is
+  validated on the main side before it is used, every time, never on the renderer side only.
+- An error shown to someone drawing art names the file and says what to change. It is written
+  for a person who has never seen a sprite sheet, and it is written once, in the validator.
+
 ## Phase 0 findings worth remembering
 
 - `focusable: false` makes Chromium create an override-redirect X window. Mutter does not

@@ -3,19 +3,23 @@ import { describe, expect, it } from 'vitest';
 import type { MoodModifiers } from '../../shared/mood';
 import {
   ALERT_MS,
+  ARRIVE_PX,
   CELEBRATE_MS,
   DEFAULT_IDLE_MS,
   IDLE_MS,
+  PET_MS,
   SIT_MS,
   SLEEP_AFTER_MS,
-  WALK_MS,
+  STARTLE_MS,
   WALK_SPEED_PX_S,
+  WALK_TIMEOUT_MS,
   createActor,
   reduce,
 } from './actor';
 import type { ActorAction, ActorState, Cursor, Rng } from './actor';
-import { groundY } from './movement';
+import { FLING_HARD_PX_S, groundY } from './movement';
 import type { DisplayArea, Target } from './movement';
+import { EDGE_PX, LOOK_MS, ROOST_MS, usableRange } from './roost';
 
 const primary: DisplayArea = { id: 1, x: 0, y: 0, width: 1920, height: 1080 };
 const tallRight: DisplayArea = { id: 2, x: 1920, y: 0, width: 1080, height: 1920 };
@@ -78,14 +82,15 @@ describe('createActor', () => {
 });
 
 describe('idle to walk', () => {
-  it('picks a walk duration in range from a fixed rng', () => {
+  it('picks a destination on the current display instead of a duration', () => {
     const rng = fixed(0.5);
     const start = { ...grounded(), poseUntilMs: 1000 };
     const s = tick(start, one, 1000, rng);
     expect(s.pose).toBe('walk');
-    expect(s.poseUntilMs).toBeCloseTo((WALK_MS[0] + WALK_MS[1]) / 2, 6);
-    expect(s.poseUntilMs).toBeGreaterThanOrEqual(WALK_MS[0]);
-    expect(s.poseUntilMs).toBeLessThanOrEqual(WALK_MS[1]);
+    expect(s.spot?.displayId).toBe(1);
+    expect(s.legX).toBeDefined();
+    // The only timer on a walk is the cap that catches a destination it cannot reach.
+    expect(s.poseUntilMs).toBe(WALK_TIMEOUT_MS);
   });
 
   it('goes to sit for a roll between 0.65 and 0.9', () => {
@@ -94,9 +99,11 @@ describe('idle to walk', () => {
     expect(tick(start, one, 1000, fixed(0.95)).pose).toBe('idle');
   });
 
-  it('walks left when the direction roll is below 0.5', () => {
+  it('walks left when the destination is to its left', () => {
     const start = { ...grounded(), poseUntilMs: 1000 };
-    const s = run(tick(start, one, 1000, fixed(0.1)), one, 1000, 50, fixed(0.1));
+    const first = tick(start, one, 1000, fixed(0.1));
+    expect(first.spot?.x).toBeLessThan(start.x);
+    const s = run(first, one, 1000, 50, fixed(0.1));
     expect(s.pose).toBe('walk');
     expect(s.facing).toBe('left');
     expect(s.vx).toBe(-WALK_SPEED_PX_S);
@@ -104,17 +111,19 @@ describe('idle to walk', () => {
 });
 
 describe('walk', () => {
-  it('reaches cruise speed and stops with easing before the pose ends', () => {
+  it('reaches cruise speed and brakes to a stop on arrival', () => {
     const rng = fixed(0.5);
     let s = tick({ ...grounded(), poseUntilMs: 1000 }, one, 1000, rng);
     expect(s.pose).toBe('walk');
-    const duration = s.poseUntilMs;
+    const destination = s.spot?.x ?? 0;
     const speeds: number[] = [];
-    for (let t = 0; t < duration - 50; t += 50) {
+    let steps = 0;
+    while (s.pose === 'walk' && steps < 1000) {
       s = tick(s, one, 50, rng);
       speeds.push(s.vx);
+      steps++;
     }
-    expect(s.pose).toBe('walk');
+    expect(s.pose).not.toBe('walk');
     expect(Math.max(...speeds)).toBe(WALK_SPEED_PX_S);
     const peak = speeds.lastIndexOf(WALK_SPEED_PX_S);
     const braking = speeds.slice(peak);
@@ -122,7 +131,9 @@ describe('walk', () => {
       expect(braking[i]).toBeLessThanOrEqual(braking[i - 1] ?? 0);
     }
     expect(s.vx).toBe(0);
-    expect(tick(s, one, 50, rng).pose).toBe('idle');
+    expect(Math.abs(s.x - destination)).toBeLessThanOrEqual(ARRIVE_PX);
+    expect(s.spot).toBeUndefined();
+    expect(s.poseMs).toBeLessThan(s.poseUntilMs);
   });
 
   it('keeps facing in sync with a bounce', () => {
@@ -480,11 +491,34 @@ describe('mood modifiers on tick', () => {
     expect(idled.poseUntilMs).toBeCloseTo((IDLE_MS[0] + 0.95 * (IDLE_MS[1] - IDLE_MS[0])) * 0.7, 6);
   });
 
-  it('leaves walk durations alone', () => {
+  it('leaves the walk cap alone whatever the mood', () => {
     const start = { ...grounded(), poseUntilMs: 1000 };
     const s = tick(start, one, 1000, fixed(0.5), still, false, slow);
     expect(s.pose).toBe('walk');
-    expect(s.poseUntilMs).toBeCloseTo((WALK_MS[0] + WALK_MS[1]) / 2, 6);
+    expect(s.poseUntilMs).toBe(WALK_TIMEOUT_MS);
+    expect(tick(start, one, 1000, fixed(0.5), still, false, quick).poseUntilMs).toBe(
+      WALK_TIMEOUT_MS,
+    );
+  });
+
+  it('stretches the rest at an arrival by the pause factor', () => {
+    const range = usableRange(primary, size);
+    const spot = { x: range.min, displayId: 1, kind: 'corner' as const };
+    const start: ActorState = { ...grounded(1, range.min + 10), poseUntilMs: 1, spot };
+    const plain = run(tick(start, one, 10, fixed(0.5)), one, 3000, 50, fixed(0.5));
+    const slowed = run(
+      tick(start, one, 10, fixed(0.5), still, false, slow),
+      one,
+      3000,
+      50,
+      fixed(0.5),
+      still,
+      false,
+      slow,
+    );
+    expect(plain.pose).toBe('sit');
+    expect(slowed.pose).toBe('sit');
+    expect(slowed.poseUntilMs).toBeCloseTo(plain.poseUntilMs * 1.8, 6);
   });
 
   it('behaves exactly as without a mood when given neutral factors', () => {
@@ -499,5 +533,316 @@ describe('mood modifiers on tick', () => {
       b = tick(b, two, 33, rb, still, false, neutral);
     }
     expect(a).toEqual(b);
+  });
+});
+
+describe('roosting', () => {
+  const range = usableRange(primary, size);
+
+  function lcg(seed: number): Rng {
+    let s = seed >>> 0;
+    return () => {
+      s = (s * 1664525 + 1013904223) >>> 0;
+      return s / 4294967296;
+    };
+  }
+
+  it('breaks a long crossing into legs and looks around between them', () => {
+    const spot = { x: range.max, displayId: 1, kind: 'corner' as const };
+    let s: ActorState = { ...grounded(1, range.min), poseUntilMs: 1, spot };
+    const pauses: number[] = [];
+    let last = s.pose;
+    for (let i = 0; i < 4000 && s.pose !== 'sit'; i++) {
+      s = tick(s, one, 50, fixed(0.5));
+      if (s.pose !== last) {
+        if (s.pose === 'idle') pauses.push(s.poseUntilMs);
+        last = s.pose;
+      }
+    }
+    expect(pauses.length).toBeGreaterThanOrEqual(2);
+    for (const pause of pauses) {
+      expect(pause).toBeGreaterThanOrEqual(LOOK_MS[0]);
+      expect(pause).toBeLessThanOrEqual(LOOK_MS[1]);
+    }
+    expect(s.pose).toBe('sit');
+    expect(Math.abs(s.x - range.max)).toBeLessThanOrEqual(ARRIVE_PX);
+  });
+
+  it('rests at an arrival far longer than an ordinary idle', () => {
+    const spot = { x: range.max, displayId: 1, kind: 'corner' as const };
+    let s: ActorState = { ...grounded(1, range.max - 300), poseUntilMs: 1, spot };
+    for (let i = 0; i < 2000 && s.pose !== 'sit'; i++) s = tick(s, one, 50, fixed(0.5));
+    expect(s.pose).toBe('sit');
+    expect(s.poseUntilMs).toBeGreaterThanOrEqual(ROOST_MS.corner[0]);
+    expect(s.poseUntilMs).toBeGreaterThan(IDLE_MS[1]);
+    expect(s.spot).toBeUndefined();
+    expect(s.legX).toBeUndefined();
+  });
+
+  it('spends most of its resting time near a side of the screen', () => {
+    const rng = lcg(11);
+    let s = grounded();
+    let resting = 0;
+    let nearASide = 0;
+    for (let i = 0; i < 30_000; i++) {
+      s = tick(s, one, 50, rng);
+      expect(s.x).toBeGreaterThanOrEqual(range.min);
+      expect(s.x).toBeLessThanOrEqual(range.max);
+      if (s.pose === 'sit' || s.pose === 'sleep' || s.pose === 'idle') {
+        resting++;
+        if (Math.min(s.x - range.min, range.max - s.x) <= EDGE_PX) nearASide++;
+      }
+    }
+    expect(resting).toBeGreaterThan(0);
+    expect(nearASide / resting).toBeGreaterThan(0.7);
+  });
+
+  it('picks a destination on the display it has just crossed to', () => {
+    let s = { ...grounded(1, 1800), poseUntilMs: 60_000 };
+    const onRight: Cursor = { displayId: 2, idleMs: 0 };
+    s = run(s, two, 3200, 100, fixed(0.5), onRight, true);
+    expect(s.goalDisplayId).toBe(2);
+    expect(s.spot).toBeUndefined();
+    s = run(s, two, 3000, 50, fixed(0.5), onRight, true);
+    expect(s.displayId).toBe(2);
+    expect(s.spot?.displayId).toBe(2);
+    expect(s.spot?.x).toBeGreaterThanOrEqual(tallRight.x);
+  });
+});
+
+describe('fling', () => {
+  const floor = groundY(primary, size);
+  const range = usableRange(primary, size);
+
+  function atRest(s: ActorState): boolean {
+    return (
+      (s.pose === 'idle' || s.pose === 'sit' || s.pose === 'sleep') &&
+      s.spot === undefined &&
+      s.legX === undefined &&
+      s.vy === 0 &&
+      s.y === floor
+    );
+  }
+
+  it('carries the release velocity into an arc and bounces before it settles', () => {
+    let s = reduce(grounded(1, 900), { type: 'drag-start' }, one);
+    s = reduce(s, { type: 'drag-end', x: 900, y: 300, displayId: 1, vx: 900, vy: -300 }, one);
+    expect(s.pose).toBe('drag');
+    expect(s.flung).toBe(true);
+    let contacts = 0;
+    let liftedAgain = false;
+    for (let i = 0; i < 400 && s.pose === 'drag'; i++) {
+      const before = s;
+      s = tick(s, one, 16, fixed(0.5));
+      if (before.y < floor && s.y >= floor) contacts++;
+      if (contacts > 0 && s.y < floor) liftedAgain = true;
+    }
+    expect(s.x).toBeGreaterThan(900);
+    expect(contacts).toBeGreaterThanOrEqual(1);
+    expect(liftedAgain).toBe(true);
+    expect(s.y).toBe(floor);
+    expect(s.pose).toBe('idle');
+    expect(s.flung).toBe(false);
+  });
+
+  it('puts itself back against the nearest side after a hard throw', () => {
+    let s = reduce(grounded(1, 1400), { type: 'drag-start' }, one);
+    s = reduce(s, { type: 'drag-end', x: 1400, y: 300, displayId: 1, vx: 500, vy: -500 }, one);
+    expect(s.spot).toBeUndefined();
+    for (let i = 0; i < 4000 && !atRest(s); i++) s = tick(s, one, 20, fixed(0.5));
+    expect(atRest(s)).toBe(true);
+    expect(Math.min(s.x - range.min, range.max - s.x)).toBeLessThanOrEqual(ARRIVE_PX);
+  });
+
+  it('still drops straight down without a bounce when the release is gentle', () => {
+    let s = reduce(grounded(), { type: 'drag-start' }, one);
+    s = reduce(s, { type: 'drag-end', x: 300, y: 200, displayId: 1, vx: 20, vy: 40 }, one);
+    expect(s.flung).toBe(false);
+    let contacts = 0;
+    for (let i = 0; i < 400 && s.pose === 'drag'; i++) {
+      const before = s;
+      s = tick(s, one, 16, fixed(0.5));
+      if (before.y < floor && s.y >= floor) contacts++;
+    }
+    expect(contacts).toBe(1);
+    expect(s.pose).toBe('idle');
+    expect(s.spot).toBeUndefined();
+    expect(s.y).toBe(floor);
+  });
+
+  it('needs a real throw to count as one', () => {
+    const soft = reduce(
+      grounded(),
+      { type: 'drag-end', x: 300, y: 200, displayId: 1, vx: FLING_HARD_PX_S - 1, vy: 0 },
+      one,
+    );
+    expect(soft.flung).toBe(false);
+    const hard = reduce(
+      grounded(),
+      { type: 'drag-end', x: 300, y: 200, displayId: 1, vx: FLING_HARD_PX_S, vy: 0 },
+      one,
+    );
+    expect(hard.flung).toBe(true);
+  });
+
+  it('reaches a resting pose from any release velocity within a bounded number of steps', () => {
+    for (const vx of [-1800, -700, 0, 700, 1800]) {
+      for (const vy of [-1500, -600, 0, 600, 1500]) {
+        let s = reduce(
+          grounded(1, 900),
+          { type: 'drag-end', x: 900, y: 400, displayId: 1, vx, vy },
+          one,
+        );
+        let steps = 0;
+        while (steps < 3000 && !atRest(s)) {
+          s = tick(s, one, 20, fixed(0.5));
+          steps++;
+        }
+        expect(atRest(s)).toBe(true);
+        expect(steps).toBeLessThan(3000);
+        expect(s.x).toBeGreaterThanOrEqual(range.min);
+        expect(s.x).toBeLessThanOrEqual(range.max);
+      }
+    }
+  });
+});
+
+describe('dance', () => {
+  it('does not fall asleep while the music is still on', () => {
+    let s = reduce(grounded(), { type: 'dance-start' }, one);
+    // Well past the idle threshold: nobody has touched the mouse, but something is playing.
+    for (let i = 0; i < 40; i += 1) {
+      s = tick(s, one, 20_000, fixed(0.5), { displayId: 1, idleMs: SLEEP_AFTER_MS * 4 });
+    }
+    expect(s.pose).toBe('dance');
+    s = reduce(s, { type: 'dance-stop' }, one);
+    s = tick(s, one, 1000, fixed(0.5), { displayId: 1, idleMs: SLEEP_AFTER_MS * 4 });
+    expect(s.pose).toBe('sleep');
+  });
+
+  it('holds through every idle and walk roll until it is told to stop', () => {
+    let s = reduce(grounded(), { type: 'dance-start' }, one);
+    expect(s.pose).toBe('dance');
+    s = run(s, one, 120_000, 100, fixed(0.5));
+    expect(s.pose).toBe('dance');
+    expect(s.x).toBe(500);
+    s = reduce(s, { type: 'dance-stop' }, one);
+    expect(s.pose).toBe('idle');
+  });
+
+  it('gives way to a nudge, a drag and sleep', () => {
+    const dancing = reduce(grounded(), { type: 'dance-start' }, one);
+    expect(reduce(dancing, { type: 'alert' }, one).pose).toBe('alert');
+    expect(reduce(dancing, { type: 'drag-start' }, one).pose).toBe('drag');
+    // Sleep is the exception: music playing means somebody is there, so a still cursor is not
+    // evidence of an empty chair while it is on.
+    const asleep: Cursor = { displayId: 1, idleMs: SLEEP_AFTER_MS };
+    expect(tick(dancing, one, 100, fixed(0.5), asleep).pose).toBe('dance');
+  });
+
+  it('drops the journey it was on', () => {
+    const walking: ActorState = {
+      ...grounded(),
+      pose: 'walk',
+      poseUntilMs: 9000,
+      spot: { x: 1800, displayId: 1, kind: 'corner' },
+      legX: 1800,
+    };
+    const s = reduce(walking, { type: 'dance-start' }, one);
+    expect(s.spot).toBeUndefined();
+    expect(s.legX).toBeUndefined();
+  });
+
+  it('is ignored in the air and does nothing when it is not dancing', () => {
+    const falling = reduce(grounded(), { type: 'drag-end', x: 300, y: 100, displayId: 1 }, one);
+    expect(reduce(falling, { type: 'dance-start' }, one)).toEqual(falling);
+    const idle = grounded();
+    expect(reduce(idle, { type: 'dance-stop' }, one)).toEqual(idle);
+  });
+});
+
+describe('pet', () => {
+  it('lasts between two and three seconds', () => {
+    expect(PET_MS).toBeGreaterThanOrEqual(2000);
+    expect(PET_MS).toBeLessThanOrEqual(3000);
+  });
+
+  it('returns to the pose it interrupted with the time it had left', () => {
+    const sitting: ActorState = { ...grounded(), pose: 'sit', poseUntilMs: 10_000, poseMs: 4000 };
+    let s = reduce(sitting, { type: 'pet' }, one);
+    expect(s.pose).toBe('pet');
+    expect(s.poseUntilMs).toBe(PET_MS);
+    s = run(s, one, PET_MS - 100, 100, fixed(0.5));
+    expect(s.pose).toBe('pet');
+    s = tick(s, one, 200, fixed(0.5));
+    expect(s.pose).toBe('sit');
+    expect(s.poseUntilMs).toBe(6000);
+  });
+
+  it('keeps the destination it was walking to', () => {
+    const spot = { x: 1600, displayId: 1, kind: 'corner' as const };
+    const walking: ActorState = {
+      ...grounded(),
+      pose: 'walk',
+      poseUntilMs: 30_000,
+      spot,
+      legX: 1600,
+    };
+    let s = reduce(walking, { type: 'pet' }, one);
+    expect(s.spot).toEqual(spot);
+    s = run(s, one, PET_MS + 200, 100, fixed(0.5));
+    expect(s.pose).toBe('walk');
+    expect(s.spot).toEqual(spot);
+  });
+
+  it('goes back to dancing', () => {
+    let s = reduce(grounded(), { type: 'dance-start' }, one);
+    s = reduce(s, { type: 'pet' }, one);
+    expect(s.pose).toBe('pet');
+    s = run(s, one, PET_MS + 200, 100, fixed(0.5));
+    expect(s.pose).toBe('dance');
+    expect(s.poseUntilMs).toBe(0);
+  });
+
+  it('is ignored while dragging and in the air', () => {
+    const dragging = reduce(grounded(), { type: 'drag-start' }, one);
+    expect(reduce(dragging, { type: 'pet' }, one)).toEqual(dragging);
+    const falling = reduce(grounded(), { type: 'drag-end', x: 300, y: 100, displayId: 1 }, one);
+    expect(reduce(falling, { type: 'pet' }, one)).toEqual(falling);
+  });
+});
+
+describe('startle', () => {
+  it('reacts for about a second and a half', () => {
+    expect(STARTLE_MS).toBeGreaterThanOrEqual(1000);
+    expect(STARTLE_MS).toBeLessThanOrEqual(2000);
+    const s = reduce(grounded(), { type: 'startle', cursorX: 600 }, one);
+    expect(s.pose).toBe('startle');
+    expect(s.poseUntilMs).toBe(STARTLE_MS);
+  });
+
+  it('then moves a short way away from the cursor', () => {
+    let s = reduce(grounded(1, 900), { type: 'startle', cursorX: 1200 }, one);
+    const away = s.spot?.x ?? 0;
+    expect(away).toBeLessThan(900);
+    s = run(s, one, STARTLE_MS - 100, 100, fixed(0.5));
+    expect(s.pose).toBe('startle');
+    s = tick(s, one, 200, fixed(0.5));
+    expect(s.pose).toBe('walk');
+    expect(s.facing).toBe('left');
+    s = run(s, one, 8000, 50, fixed(0.5));
+    expect(Math.abs(s.x - away)).toBeLessThanOrEqual(ARRIVE_PX);
+  });
+
+  it('flees to the right when the cursor is on its left', () => {
+    const s = reduce(grounded(1, 900), { type: 'startle', cursorX: 400 }, one);
+    expect(s.spot?.x ?? 0).toBeGreaterThan(900);
+  });
+
+  it('is ignored while dragging and in the air', () => {
+    const dragging = reduce(grounded(), { type: 'drag-start' }, one);
+    expect(reduce(dragging, { type: 'startle' }, one)).toEqual(dragging);
+    const falling = reduce(grounded(), { type: 'drag-end', x: 300, y: 100, displayId: 1 }, one);
+    expect(reduce(falling, { type: 'startle' }, one)).toEqual(falling);
   });
 });

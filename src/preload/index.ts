@@ -3,8 +3,20 @@ import type { IpcRendererEvent } from 'electron';
 
 import type { PoseUpdate } from '../shared/actor';
 import type { Config } from '../shared/config';
+import type {
+  CustomArtImportResult,
+  CustomMascot,
+  CustomMascotSummary,
+} from '../shared/custom-art';
 import { IPC } from '../shared/ipc';
-import type { BubbleMessage, DragStart, EnvironmentInfo, WispApi } from '../shared/ipc';
+import type {
+  BubbleMessage,
+  CustomArtCheck,
+  CustomArtExport,
+  DragStart,
+  EnvironmentInfo,
+  WispApi,
+} from '../shared/ipc';
 import type { Mood } from '../shared/mood';
 import type { DayItem, Signal, SignalsStatus } from '../shared/signals';
 import type { SpeechStatus } from '../shared/speech';
@@ -84,6 +96,9 @@ const api: WispApi = {
   runAction(signalId, action) {
     return ipcRenderer.invoke(IPC.actionRun, signalId, action) as Promise<DayItem[]>;
   },
+  pet() {
+    ipcRenderer.send(IPC.pet);
+  },
   togglePanel() {
     ipcRenderer.send(IPC.panelToggle);
   },
@@ -121,6 +136,24 @@ const api: WispApi = {
     return subscribe(IPC.moodChanged, (m) => {
       listener(m as Mood);
     });
+  },
+  exportArtTemplate() {
+    return ipcRenderer.invoke(IPC.customArtExport) as Promise<CustomArtExport | null>;
+  },
+  checkArtFolder() {
+    return ipcRenderer.invoke(IPC.customArtCheck) as Promise<CustomArtCheck | null>;
+  },
+  importCustomMascot(name) {
+    return ipcRenderer.invoke(IPC.customArtImport, name) as Promise<CustomArtImportResult | null>;
+  },
+  listCustomMascots() {
+    return ipcRenderer.invoke(IPC.customMascotList) as Promise<CustomMascotSummary[]>;
+  },
+  loadCustomMascot(slug) {
+    return ipcRenderer.invoke(IPC.customMascotLoad, slug) as Promise<CustomMascot | null>;
+  },
+  deleteCustomMascot(slug) {
+    return ipcRenderer.invoke(IPC.customMascotDelete, slug) as Promise<CustomMascotSummary[]>;
   },
 };
 

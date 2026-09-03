@@ -9,14 +9,23 @@ describe('normalizeConfig', () => {
     expect(normalizeConfig({ name: 42, locale: 'xx', autostart: 'yes' })).toEqual(defaultConfig);
   });
 
+  it('reads the night and music switches back', () => {
+    const c = normalizeConfig({ night: true, music: false });
+    expect(c.night).toBe(true);
+    expect(c.music).toBe(false);
+  });
+
   it('keeps valid fields, trims and caps the name', () => {
     const c = normalizeConfig({ name: '  Momo  ', autostart: true, followCursor: false });
     expect(c).toEqual({
       name: 'Momo',
       mascot: 'wisp',
+      customMascot: '',
       locale: 'en',
       autostart: true,
       followCursor: false,
+      night: false,
+      music: true,
       dueSoonMinutes: 30,
       pollMinutes: 5,
       quietHours: { enabled: true, start: '19:00', end: '08:00' },

@@ -11,6 +11,7 @@ import type { MascotName } from '../../shared/mascots';
 import type { Mood } from '../../shared/mood';
 import type { SignalSource, SignalsStatus } from '../../shared/signals';
 import type { SpeechConfig, SpeechProviderKind, SpeechStatus } from '../../shared/speech';
+import { CustomArtSection } from './CustomArtSection';
 
 // Vite resolves this glob at build time, so every mascot's icon ships in the bundle.
 const iconUrls = import.meta.glob<string>('../../../resources/icons/*/icon-256.png', {
@@ -350,7 +351,7 @@ export function SettingsPage() {
     if (e.key === 'Escape' && config) setNameDraft(config.name);
   }
 
-  function onToggle(key: 'autostart' | 'followCursor') {
+  function onToggle(key: 'autostart' | 'followCursor' | 'night' | 'music') {
     return (e: ChangeEvent<HTMLInputElement>) => {
       save({ [key]: e.target.checked });
     };
@@ -476,6 +477,14 @@ export function SettingsPage() {
           <p className="hint">{t('settings.mascot.hint')}</p>
         </section>
 
+        <CustomArtSection
+          t={t}
+          customMascot={config.customMascot}
+          onSelect={(slug) => {
+            save({ customMascot: slug });
+          }}
+        />
+
         <section className="field">
           <label htmlFor="locale">{t('settings.language')}</label>
           <select id="locale" value={config.locale} disabled>
@@ -505,6 +514,22 @@ export function SettingsPage() {
             <span>{t('settings.followCursor')}</span>
           </label>
           <p className="hint">{t('settings.followCursor.hint')}</p>
+        </section>
+
+        <section className="field">
+          <label className="check">
+            <input type="checkbox" checked={config.night} onChange={onToggle('night')} />
+            <span>{t('settings.night')}</span>
+          </label>
+          <p className="hint">{t('settings.night.hint')}</p>
+        </section>
+
+        <section className="field">
+          <label className="check">
+            <input type="checkbox" checked={config.music} onChange={onToggle('music')} />
+            <span>{t('settings.music')}</span>
+          </label>
+          <p className="hint">{t('settings.music.hint')}</p>
         </section>
 
         <section className="field">

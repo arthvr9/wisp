@@ -39,7 +39,7 @@ const HERO = 'wisp';
 const MASCOTS = ['wisp', 'coffee', 'cat', 'ghost', 'plant'];
 
 /** Poses in the order the README talks about them. */
-const POSES = ['idle', 'walk', 'sit', 'sleep', 'alert', 'celebrate'];
+const POSES = ['idle', 'walk', 'sit', 'sleep', 'alert', 'celebrate', 'dance', 'pet', 'startle'];
 
 /** How long one pose stays on screen in poses.gif, in milliseconds. */
 const POSE_HOLD = 1500;

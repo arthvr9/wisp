@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { WALK_ACCEL_PX_S2, directionTo, groundY, step, walk } from './movement';
-import type { DisplayArea, MovementState, Target } from './movement';
+import { MAX_BOUNCES, WALK_ACCEL_PX_S2, directionTo, fly, groundY, step, walk } from './movement';
+import type { DisplayArea, Flight, MovementState, Target } from './movement';
 
 const primary: DisplayArea = { id: 1, x: 0, y: 0, width: 1920, height: 1080 };
 const tallRight: DisplayArea = { id: 2, x: 1920, y: 0, width: 1080, height: 1920 };
@@ -208,5 +208,75 @@ describe('walking into a neighbour', () => {
     for (let i = 0; i < 40; i++) s = step(s, t, 50);
     expect(s.displayId).toBe(2);
     expect(s.vx).toBe(70);
+  });
+});
+
+describe('fly', () => {
+  const t = target(primary);
+  const floor = groundY(primary, size);
+
+  function released(vx: number, vy: number, y = 200): Flight {
+    return { x: 900, y, vx, vy, displayId: 1, bounces: 0 };
+  }
+
+  it('carries the release velocity into an arc', () => {
+    const up = fly(released(300, -600), t, 100);
+    expect(up.flight.x).toBeCloseTo(930, 6);
+    expect(up.flight.y).toBeLessThan(200);
+    expect(up.flight.vy).toBeCloseTo(-360, 6);
+    expect(up.contact).toBe(false);
+  });
+
+  it('bounces with damping and keeps a share of the horizontal speed', () => {
+    const hit = fly(released(200, 800, floor - 1), t, 100);
+    expect(hit.contact).toBe(true);
+    expect(hit.resting).toBe(false);
+    expect(hit.flight.y).toBe(floor);
+    expect(hit.flight.vy).toBeLessThan(0);
+    expect(Math.abs(hit.flight.vy)).toBeLessThan(hit.impact);
+    expect(hit.flight.vx).toBeGreaterThan(0);
+    expect(hit.flight.vx).toBeLessThan(200);
+    expect(hit.flight.bounces).toBe(1);
+  });
+
+  it('rests instead of bouncing once the bounces are spent', () => {
+    const hit = fly({ ...released(200, 800, floor - 1), bounces: MAX_BOUNCES }, t, 100);
+    expect(hit.resting).toBe(true);
+    expect(hit.flight.vy).toBe(0);
+    expect(hit.flight.vx).toBe(0);
+    expect(hit.flight.y).toBe(floor);
+  });
+
+  it('does not bounce at all when no bounce is allowed', () => {
+    const hit = fly(released(0, 800, floor - 1), t, 100, 0);
+    expect(hit.resting).toBe(true);
+    expect(hit.flight.bounces).toBe(0);
+  });
+
+  it('stops upward motion at the top of the display', () => {
+    const hit = fly(released(0, -4000, 10), t, 100);
+    expect(hit.flight.y).toBe(primary.y);
+    expect(hit.flight.vy).toBe(0);
+  });
+
+  it('comes to rest from any release velocity within a bounded number of steps', () => {
+    for (const vx of [-2400, -700, 0, 700, 2400]) {
+      for (const vy of [-2000, -700, 0, 700, 2000]) {
+        let f = released(vx, vy);
+        let steps = 0;
+        let done = false;
+        while (steps < 400 && !done) {
+          const result = fly(f, t, 20);
+          f = result.flight;
+          done = result.resting;
+          steps++;
+        }
+        expect(done).toBe(true);
+        expect(f.y).toBe(floor);
+        expect(f.vy).toBe(0);
+        expect(f.x).toBeGreaterThanOrEqual(primary.x);
+        expect(f.x).toBeLessThanOrEqual(primary.x + primary.width - size);
+      }
+    }
   });
 });

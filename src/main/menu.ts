@@ -6,6 +6,7 @@ export interface MenuState {
   paused: boolean;
   hidden: boolean;
   snoozed: boolean;
+  night: boolean;
 }
 
 export interface MenuActions {
@@ -13,6 +14,7 @@ export interface MenuActions {
   toggleHidden(): void;
   poke(): void;
   toggleSnooze(): void;
+  toggleNight(): void;
   openSettings(): void;
   quit(): void;
 }
@@ -45,6 +47,14 @@ export function menuTemplate(
       label: state.snoozed ? t('menu.unsnooze') : t('menu.snooze'),
       click: () => {
         actions.toggleSnooze();
+      },
+    },
+    {
+      label: t('menu.night'),
+      type: 'checkbox',
+      checked: state.night,
+      click: () => {
+        actions.toggleNight();
       },
     },
     { type: 'separator' },

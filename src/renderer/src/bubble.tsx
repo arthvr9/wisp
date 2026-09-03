@@ -2,6 +2,7 @@ import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import type { BubbleMessage } from '../../shared/ipc';
+import { startTheme } from './theme';
 import './bubble.css';
 
 function Bubble() {
@@ -17,6 +18,8 @@ function Bubble() {
     </div>
   );
 }
+
+startTheme();
 
 const root = document.getElementById('root');
 if (root) {

@@ -63,7 +63,19 @@ export const POSES: readonly Pose[] = [
   'alert',
   'drag',
   'celebrate',
+  'dance',
+  'pet',
+  'startle',
 ];
+
+// Poses drawn after the first sheets existed. A sheet without them is not a broken sheet, it is
+// an older one, so each names a pose to borrow instead. This is also what lets a hand drawn
+// mascot ship two poses rather than all ten: everything undrawn falls back rather than throwing.
+const FALLBACK: Partial<Record<Pose, Pose>> = {
+  dance: 'idle',
+  pet: 'idle',
+  startle: 'alert',
+};
 export const EXPRESSIONS: readonly Expression[] = ['bright', 'plain', 'low'];
 const EXPRESSIONS_TAG = 'expressions';
 
@@ -99,8 +111,20 @@ export function parseSheet(json: AsepriteJson): Sheet {
   }));
   const animations: Partial<Record<Pose, Frame[]>> = {};
   for (const pose of POSES) {
+    const declared = json.meta.frameTags.some((t) => t.name === pose);
+    if (!declared && FALLBACK[pose] !== undefined) continue;
     const tag = findTag(json, pose, frames.length);
     animations[pose] = frames.slice(tag.from, tag.to + 1);
+  }
+  // Second pass, because a pose can only borrow from one that has already been resolved.
+  for (const pose of POSES) {
+    if (animations[pose] !== undefined) continue;
+    const borrowed = FALLBACK[pose];
+    const source = borrowed === undefined ? undefined : animations[borrowed];
+    if (source === undefined) {
+      throw new Error(`Sprite sheet has no frame tag "${pose}" and nothing to fall back to.`);
+    }
+    animations[pose] = source;
   }
   const tag = findTag(json, EXPRESSIONS_TAG, frames.length);
   if (tag.to - tag.from + 1 !== EXPRESSIONS.length) {

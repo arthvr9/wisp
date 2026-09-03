@@ -1,4 +1,5 @@
 import type { NudgeBudget, QuietHours } from './nudges';
+import { isCustomMascotSlug } from './custom-art';
 import { isMascot } from './mascots';
 import type { MascotName } from './mascots';
 import type { SpeechConfig } from './speech';
@@ -20,9 +21,17 @@ export interface GruplyConfig {
 export interface Config {
   name: string;
   mascot: MascotName;
+  /**
+   * Slug of a mascot the user drew, or empty for none. It is a separate field from `mascot`
+   * rather than a wider union, because `mascot` also picks the tray icon and the icons ship with
+   * the app. A custom mascot borrows the built-in art for every pose it does not draw.
+   */
+  customMascot: string;
   locale: Locale;
   autostart: boolean;
   followCursor: boolean;
+  night: boolean;
+  music: boolean;
   dueSoonMinutes: number;
   pollMinutes: number;
   quietHours: QuietHours;
@@ -35,9 +44,12 @@ export interface Config {
 export const defaultConfig: Config = {
   name: 'Wisp',
   mascot: 'wisp',
+  customMascot: '',
   locale: 'en',
   autostart: false,
   followCursor: true,
+  night: false,
+  music: true,
   dueSoonMinutes: 30,
   pollMinutes: 5,
   quietHours: { enabled: true, start: '19:00', end: '08:00' },
@@ -58,8 +70,12 @@ export function normalizeConfig(raw: unknown): Config {
   if (typeof r.name === 'string' && r.name.trim().length > 0) c.name = r.name.trim().slice(0, 24);
   if (r.locale === 'en') c.locale = r.locale;
   if (isMascot(r.mascot)) c.mascot = r.mascot;
+  if (isCustomMascotSlug(r.customMascot)) c.customMascot = r.customMascot;
+  else if (r.customMascot === '') c.customMascot = '';
   if (typeof r.autostart === 'boolean') c.autostart = r.autostart;
   if (typeof r.followCursor === 'boolean') c.followCursor = r.followCursor;
+  if (typeof r.night === 'boolean') c.night = r.night;
+  if (typeof r.music === 'boolean') c.music = r.music;
   if (typeof r.dueSoonMinutes === 'number' && r.dueSoonMinutes >= 1 && r.dueSoonMinutes <= 1440)
     c.dueSoonMinutes = Math.round(r.dueSoonMinutes);
   if (typeof r.pollMinutes === 'number' && r.pollMinutes >= 1 && r.pollMinutes <= 120)

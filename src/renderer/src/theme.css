@@ -1,0 +1,42 @@
+/* One palette for every window. The light values are the ones the app shipped with; the dark set
+   is chosen against them rather than derived, because inverting a lightness channel turns a
+   violet accent grey. Night mode is a switch the user throws, not a system preference, so the
+   theme is carried on a data attribute and never on a media query. */
+:root {
+  --bg: #fafafa;
+  --fg: #1f1f1f;
+  --muted: #6b6b6b;
+  --line: #e2e2e2;
+  --border: #c9c9c9;
+  --border-hover: #a8a8a8;
+  --field: #ffffff;
+  --accent: #7c3aed;
+  --accent-strong: #6d28d9;
+  --accent-fg: #ffffff;
+  --danger: #b91c1c;
+  --code-bg: #efefef;
+  --bubble-bg: #fbf8ff;
+  --bubble-fg: #2e1a47;
+  --bubble-outline: #2e1a47;
+}
+
+:root[data-theme='dark'] {
+  --bg: #16141c;
+  --fg: #e9e5f2;
+  --muted: #978fab;
+  --line: #272231;
+  --border: #3b3550;
+  --border-hover: #574f72;
+  --field: #1d1927;
+  --accent: #a78bfa;
+  --accent-strong: #8b5cf6;
+  /* Dark enough that filled button text clears 4.5 to 1 against the accent fill. */
+  --accent-fg: #0d0a14;
+  --danger: #f87171;
+  --code-bg: #201b2b;
+  /* The bubble floats over the wallpaper rather than over the app, so its fill has to stay well
+     clear of the outline in both directions or the shape stops reading on a dark desktop. */
+  --bubble-bg: #2b2438;
+  --bubble-fg: #ece7f8;
+  --bubble-outline: #0f0b18;
+}

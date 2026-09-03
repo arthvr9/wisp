@@ -107,6 +107,19 @@ const FLAME_PROFILE = [
 ];
 
 /**
+ * A flare widens the flame without moving its neck or its tip: nothing at the base, where the
+ * body hides it anyway, most of it a third of the way up, and gone again over the last rows. It
+ * is the one thing allowed to break the silhouette, so only the startle asks for it.
+ * @param {number} f how far up the flame this row is, 0 at the neck and 1 at the tip
+ * @param {number} flare
+ */
+function bloom(f, flare) {
+  if (flare <= 0) return 0;
+  const t = f < 0.3 ? f / 0.3 : Math.max(0, (0.8 - f) / 0.5);
+  return Math.round(flare * t);
+}
+
+/**
  * One row of the flame, as the columns it covers. Three things shape it and all three matter:
  *   - the profile above, capped at a proportion of the height so a short flame stays slim.
  *     Without the cap a four pixel ember comes out nine across.
@@ -119,11 +132,12 @@ const FLAME_PROFILE = [
  * @param {number} height
  * @param {number} lean
  * @param {number} sway
+ * @param {number} [flare]
  */
-function flameRow(i, height, lean, sway) {
+function flameRow(i, height, lean, sway, flare = 0) {
   const f = height > 1 ? i / (height - 1) : 1;
   const shape = FLAME_PROFILE.find((step) => f <= step.upTo)?.halfWidth ?? 0;
-  const half = Math.min(shape, Math.max(1, Math.round(height / 3.5)));
+  const half = Math.min(shape, Math.max(1, Math.round(height / 3.5))) + bloom(f, flare);
   const centre = Math.round(lean * f * f) + Math.round(sway * Math.sin(f * Math.PI));
   const lick = half > 0 && f > 0.3 && f < 0.62 ? 1 : 0;
   const side = lean < 0 ? -1 : 1;
@@ -142,12 +156,13 @@ function flameRow(i, height, lean, sway) {
  * @param {number} sway
  * @param {number} width
  * @param {number} imageHeight
+ * @param {number} [flare]
  */
-function flameMask(cx, baseY, height, lean, sway, width, imageHeight) {
+function flameMask(cx, baseY, height, lean, sway, width, imageHeight, flare = 0) {
   const mask = new Uint8Array(width * imageHeight);
   for (let i = 0; i < height; i++) {
     const y = baseY - i;
-    const row = flameRow(i, height, lean, sway);
+    const row = flameRow(i, height, lean, sway, flare);
     const c = cx + row.centre;
     for (let dx = -row.left; dx <= row.right; dx++) {
       const x = c + dx;
@@ -186,18 +201,23 @@ function shade(canvas, x, y, color) {
  * @param {number} height
  * @param {number} lean
  * @param {number} sway
+ * @param {number} [flare]
  */
-function shadeFlame(canvas, solid, cx, baseY, height, lean, sway) {
+function shadeFlame(canvas, solid, cx, baseY, height, lean, sway, flare = 0) {
   const { palette, width } = canvas;
   for (let i = 0; i < height; i++) {
     const y = baseY - i;
-    const row = flameRow(i, height, lean, sway);
+    const row = flameRow(i, height, lean, sway, flare);
     const c = cx + row.centre;
+    // A flare burns hotter than it is wide. On the resting ramp its lower half comes out as one
+    // large hard edged dark shape sitting on the head, which is a hat; brought forward, the rim
+    // reaches the mid purple at once and the flame reads as light rather than as an object.
+    const cool = flare > 0 ? 0.2 : 0.55;
     // The rim runs dark at the base, mid purple through the body of the flame and lilac over the
     // last rows, so the shape keeps a defined edge against a pale wallpaper down where it is
     // wide, and burns out at the tip.
     const rim =
-      i >= height - 2 ? palette.light : i >= height * 0.55 ? palette.deep : palette.outline;
+      i >= height - 2 ? palette.light : i >= height * cool ? palette.deep : palette.outline;
     for (let dx = -row.left; dx <= row.right; dx++) {
       const x = c + dx;
       if (x < 0 || y < 0 || x >= width || y >= canvas.height) continue;
@@ -216,15 +236,28 @@ function shadeFlame(canvas, solid, cx, baseY, height, lean, sway) {
  * @param {number} cx
  * @param {number} cy
  * @param {number} halfW
+ * @param {number} [glow] how far the core swells, 0 for the resting light
  */
-function shadeBody(canvas, cx, cy, halfW) {
+function shadeBody(canvas, cx, cy, halfW, glow = 0) {
   const { palette } = canvas;
   const top = cy - RY_TOP;
+  // Before the pale patch and not after it: `shade` only repaints pixels still in flat body
+  // colour, so the core has to claim its two rows first or the light gets there ahead of it.
+  if (glow > 1) {
+    for (let dx = -1; dx <= 1; dx++) shade(canvas, cx + dx, top + 1, palette.core);
+    for (let dx = -2; dx <= 2; dx++) shade(canvas, cx + dx, top + 2, palette.core);
+  }
   // Light, not core: the near white belongs to the flame alone, and a pale column running from
   // the tip of the flame down into the body turns the two of them into one ice cream cone.
   for (let dx = -4; dx <= 4; dx++) {
     if (Math.abs(dx) <= 2) shade(canvas, cx + dx, top + 1, palette.light);
     shade(canvas, cx + dx, top + 2, palette.light);
+  }
+  // Pleased, the light swells sideways rather than downward. It stops at `top + 2`, one row above
+  // the band the overlay repaints, so a brighter wisp still has flat eyes to wear.
+  if (glow > 0) {
+    for (let dx = -5; dx <= 5; dx++) shade(canvas, cx + dx, top + 1, palette.light);
+    for (let dx = -6; dx <= 6; dx++) shade(canvas, cx + dx, top + 2, palette.light);
   }
   for (let y = cy + 4; y <= cy + 12; y++) {
     for (let dx = -halfW; dx <= halfW; dx++) shade(canvas, cx + dx, y, palette.deep);
@@ -257,7 +290,8 @@ function paintHalo(canvas, mask) {
  * The mark it floats over. It is the mascot's own light on the floor, not a cast shadow, so it
  * fades and narrows as the wisp rises instead of sharpening.
  * @param {Canvas} canvas
- * @param {number} cx
+ * @param {number} cx where the mark sits. A pose that only bobs leaves it under the centre of the
+ *   frame; one that travels sideways has to carry it with the body.
  * @param {number} lift how far above its resting height this frame sits
  */
 function paintGround(canvas, cx, lift) {
@@ -334,6 +368,9 @@ function paintWispMouth(canvas, cx, y, style) {
  *   flameH: number,
  *   lean?: number,
  *   sway?: number,
+ *   flare?: number,
+ *   glow?: number,
+ *   groundDx?: number,
  *   eyes?: EyeStyle,
  *   mouth?: MouthStyle,
  *   embers?: [number, number][],
@@ -356,18 +393,19 @@ function draw(spec) {
   // narrow neck disappears behind the body and all that shows above the head is the taper.
   const baseY = cy - RY_TOP;
 
-  paintGround(canvas, CX, -dy);
+  paintGround(canvas, CX + (spec.groundDx ?? 0), -dy);
 
   // Flame and body share one mask, so they share one outline and the flame grows out of the
   // wisp. Outlined separately, the flame's own base line reads as the brim of a hat.
   const body = bodyMask(cx, cy, halfW, ryBot, FRAME, FRAME);
-  const flame = flameMask(cx, baseY, spec.flameH, lean, sway, FRAME, FRAME);
+  const flare = spec.flare ?? 0;
+  const flame = flameMask(cx, baseY, spec.flameH, lean, sway, FRAME, FRAME, flare);
   const mask = new Uint8Array(FRAME * FRAME);
   for (let i = 0; i < mask.length; i++) mask[i] = body[i] || flame[i] ? 1 : 0;
   paintHalo(canvas, mask);
   paintMask(canvas, mask, PALETTE.body, PALETTE.outline);
-  shadeFlame(canvas, body, cx, baseY, spec.flameH, lean, sway);
-  shadeBody(canvas, cx, cy, halfW);
+  shadeFlame(canvas, body, cx, baseY, spec.flameH, lean, sway, flare);
+  shadeBody(canvas, cx, cy, halfW, spec.glow ?? 0);
 
   paintWispEyes(canvas, cx, cy, spec.eyes ?? 'open');
   if (spec.mouth) paintWispMouth(canvas, cx, cy + MOUTH_DY, spec.mouth);
@@ -557,8 +595,146 @@ const celebrate = [
   bob({ dy: 4, halfW: 10, ryBot: 4, flameH: 8, eyes: 'happy', mouth: 'smile', durationMs: 160 }),
 ];
 
+// Music is playing. The idle already hovers, so a dance that only hovers harder is the idle at a
+// different speed: what separates the two is that this one travels. It swings three pixels either
+// side of centre and four up and down, twice the idle's rise, lowest as it crosses the middle and
+// highest at each end of the sway. Eight frames at 105ms put the two ends 400ms apart, which is
+// 150 beats a minute.
+//
+// The flame is the other half of it, and the reason the low point is in the middle rather than
+// the top of a hop. A flame lags whatever carries it, so it trails hardest where the wisp is
+// moving fastest, which is the middle of the swing; and the flame may only be tall where the body
+// is low, because the tip has to stay inside the frame. Putting the two together means the
+// strongest lean lands on the tallest flame. The other way round, a lean of four on a seven row
+// flame, is a bent wire rather than fire.
+const DANCE_PATH = [
+  { dx: 0, dy: 0, lean: -4, sway: 1, flameH: 11 },
+  { dx: 2, dy: -2, lean: -3, sway: 1, flameH: 9 },
+  { dx: 3, dy: -4, lean: 1, flameH: 7 },
+  { dx: 2, dy: -2, lean: 3, sway: -1, flameH: 9 },
+  { dx: 0, dy: 0, lean: 4, sway: -1, flameH: 11 },
+  { dx: -2, dy: -2, lean: 3, sway: -1, flameH: 9 },
+  { dx: -3, dy: -4, lean: -1, flameH: 7 },
+  { dx: -2, dy: -2, lean: -3, sway: 1, flameH: 9 },
+];
+// Two sparks a cycle, shed off the trailing edge of the flame and left behind as the wisp carries
+// on past them. They are on the side it came from, which is the side the flame leans to.
+/** @type {([number, number][])[]} */
+const DANCE_EMBERS = [[], [[-5, -11]], [[-6, -14]], [], [], [[5, -11]], [[6, -14]], []];
+
+/** @type {WispSpec[]} */
+const dance = DANCE_PATH.map((step, i) =>
+  bob({
+    ...step,
+    // The mark travels with the body. A one pixel bob can leave it under the centre of the frame,
+    // but a body three pixels off a mark that stayed put reads as two separate things.
+    groundDx: step.dx,
+    embers: DANCE_EMBERS[i] ?? [],
+    durationMs: 105,
+  }),
+);
+
+// Petted. Something presses on it and it likes it, so the squash and the glow have to say both.
+// The squash is all on the underside: `ryBot` shrinks and `halfW` grows while `RY_TOP` stays put,
+// which keeps the eye band the flat strip the overlay expects. The body sinks two pixels under
+// the hand and comes back up through its resting height before settling, so the recovery reads as
+// a bounce rather than as a return to the start frame.
+//
+// The glow is what makes it pleased rather than merely squashed: the light inside spreads as the
+// body compresses and stays up for two frames after the shape has recovered, because a light that
+// brightens and dims on the same frames as the squash reads as a mechanical linkage.
+/** @type {WispSpec[]} */
+const pet = [
+  bob({ dy: 0, ryBot: 7, flameH: 10, eyes: 'happy', mouth: 'smile', durationMs: 90 }),
+  bob({
+    dy: 1,
+    halfW: 9,
+    ryBot: 6,
+    flameH: 9,
+    glow: 1,
+    eyes: 'happy',
+    mouth: 'smile',
+    durationMs: 70,
+  }),
+  bob({
+    dy: 2,
+    halfW: 10,
+    ryBot: 5,
+    flameH: 8,
+    sway: 1,
+    glow: 2,
+    eyes: 'happy',
+    mouth: 'smile',
+    durationMs: 90,
+  }),
+  bob({
+    dy: 0,
+    halfW: 9,
+    ryBot: 6,
+    flameH: 10,
+    glow: 2,
+    eyes: 'happy',
+    mouth: 'smile',
+    durationMs: 110,
+  }),
+  bob({
+    dy: -1,
+    ryBot: 7,
+    flameH: 10,
+    sway: -1,
+    glow: 1,
+    eyes: 'happy',
+    mouth: 'smile',
+    embers: [[4, -12]],
+    durationMs: 140,
+  }),
+];
+
+// The cursor was shaken over it. Where `alert` is a slow stare at something across the room, this
+// is a jump, and it is already off the ground on the first frame: a startle that winds up first
+// has stopped being a startle.
+//
+// The flare on the second frame is the point of the pose and the only place in the sheet where
+// the flame is allowed to break the silhouette. It lasts 70ms and the body stays pulled in narrow
+// underneath it, so the two read as one shape squeezed from below rather than as the flame
+// growing a brim. The flare needs rows as much as it needs width, which caps how high the jump
+// can go: the tip has to stay inside the frame, so the rise stops three pixels up and the fall
+// two pixels past resting height is what sells the height it came from.
+/** @type {WispSpec[]} */
+const startle = [
+  bob({ dy: -3, halfW: 7, ryBot: 8, flameH: 8, eyes: 'wide', durationMs: 60 }),
+  bob({
+    dy: -2,
+    halfW: 7,
+    ryBot: 8,
+    flameH: 9,
+    flare: 2,
+    eyes: 'wide',
+    embers: [
+      [-8, -12],
+      [8, -11],
+    ],
+    durationMs: 70,
+  }),
+  bob({
+    dy: 2,
+    halfW: 10,
+    ryBot: 5,
+    flameH: 9,
+    sway: 1,
+    eyes: 'wide',
+    embers: [
+      [-9, -15],
+      [9, -14],
+    ],
+    durationMs: 90,
+  }),
+  bob({ dy: -1, flameH: 10, sway: -1, eyes: 'wide', durationMs: 110 }),
+  bob({ dy: 0, flameH: 10, durationMs: 140 }),
+];
+
 /** @type {Record<string, WispSpec[]>} */
-const FRAMES = { idle, walk, sit, sleep, alert, drag, celebrate };
+const FRAMES = { idle, walk, sit, sleep, alert, drag, celebrate, dance, pet, startle };
 
 /**
  * Clears the band across the eyes with flat body colour, then paints the mood's eyes and mouth

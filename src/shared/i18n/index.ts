@@ -20,3 +20,23 @@ export function translator(locale: Locale, base: Params = {}) {
 }
 
 export type Translate = ReturnType<typeof translator>;
+
+// Every key that has no hash in it is a base line, and the keys that share its prefix before a
+// hash are alternative wordings of the same moment. The map is built once here rather than
+// scanned on every lookup, because a line is picked inside the frame loop.
+const VARIANTS: ReadonlyMap<MessageKey, readonly MessageKey[]> = (() => {
+  const map = new Map<MessageKey, MessageKey[]>();
+  for (const key of Object.keys(en) as MessageKey[]) {
+    const mark = key.indexOf('#');
+    const base = (mark === -1 ? key : key.slice(0, mark)) as MessageKey;
+    const found = map.get(base) ?? [base];
+    if (mark !== -1) found.push(key);
+    map.set(base, found);
+  }
+  return map;
+})();
+
+/** The base key and every alternative wording of it, base first. */
+export function variantsOf(key: MessageKey): readonly MessageKey[] {
+  return VARIANTS.get(key) ?? [key];
+}

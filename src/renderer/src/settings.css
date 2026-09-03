@@ -1,12 +1,4 @@
-:root {
-  --bg: #fafafa;
-  --fg: #1f1f1f;
-  --muted: #6b6b6b;
-  --line: #e2e2e2;
-  --border: #c9c9c9;
-  --accent: #7c3aed;
-  --code-bg: #efefef;
-}
+@import './theme.css';
 
 * {
   box-sizing: border-box;
@@ -158,7 +150,7 @@ select {
   padding: 5px 8px;
   border: 1px solid var(--border);
   border-radius: 2px;
-  background: #fff;
+  background: var(--field);
   color: var(--fg);
   font: inherit;
   user-select: text;
@@ -170,7 +162,7 @@ select {
 input[type='text']:hover:not(:focus),
 input[type='password']:hover:not(:focus),
 input[type='number']:hover:not(:focus) {
-  border-color: #a8a8a8;
+  border-color: var(--border-hover);
 }
 
 input[type='text']:focus,
@@ -269,7 +261,7 @@ button {
   padding: 5px 12px;
   border: 1px solid var(--border);
   border-radius: 2px;
-  background: #fff;
+  background: var(--field);
   color: var(--fg);
   cursor: pointer;
   transition:
@@ -295,13 +287,13 @@ button:disabled {
 button.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--accent-fg);
 }
 
 button.primary:hover:not(:disabled) {
-  background: #6d28d9;
-  border-color: #6d28d9;
-  color: #fff;
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: var(--accent-fg);
 }
 
 input[type='number'] {
@@ -357,7 +349,7 @@ input[type='time'] {
   padding: 4px 8px;
   border: 1px solid var(--border);
   border-radius: 2px;
-  background: #fff;
+  background: var(--field);
   color: var(--fg);
   font: inherit;
 }

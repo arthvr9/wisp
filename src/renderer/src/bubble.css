@@ -1,3 +1,5 @@
+@import './theme.css';
+
 html,
 body,
 #root {
@@ -15,10 +17,10 @@ body,
   width: 240px;
   height: 64px;
   padding: 8px 10px;
-  background: #fbf8ff;
-  border: 2px solid #2e1a47;
-  box-shadow: 4px 4px 0 #2e1a47;
-  color: #2e1a47;
+  background: var(--bubble-bg);
+  border: 2px solid var(--bubble-outline);
+  box-shadow: 4px 4px 0 var(--bubble-outline);
+  color: var(--bubble-fg);
   font:
     13px/1.35 ui-monospace,
     'DejaVu Sans Mono',
@@ -42,5 +44,5 @@ body,
   margin-left: -6px;
   border-left: 6px solid transparent;
   border-right: 6px solid transparent;
-  border-top: 12px solid #2e1a47;
+  border-top: 12px solid var(--bubble-outline);
 }

@@ -18,7 +18,16 @@ export const POSES = [
   { name: 'alert', duration: 120 },
   { name: 'drag', duration: 300 },
   { name: 'celebrate', duration: 160 },
+  { name: 'dance', duration: 105 },
+  { name: 'pet', duration: 100 },
+  { name: 'startle', duration: 95 },
 ];
+
+// The seven poses every mascot has to draw. The three after them were added once art already
+// existed, so a mascot that skips one is an older mascot rather than a broken one: the sheet
+// leaves the tag out and the renderer borrows another pose for it. Leaving one of these seven
+// out is still an error, because there is nothing sensible to borrow.
+export const REQUIRED_POSES = ['idle', 'walk', 'sit', 'sleep', 'alert', 'drag', 'celebrate'];
 
 /** @type {{ mood: string; expression: Expression; brightness: number; saturation: number }[]} */
 export const MOODS = [

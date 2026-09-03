@@ -1,3 +1,5 @@
+@import './theme.css';
+
 html,
 body,
 #root {
@@ -20,4 +22,15 @@ body,
 
 .mascot.dragging {
   cursor: grabbing;
+}
+
+/* Night mode. The mascot is a light source, so it settles by burning lower rather than by
+   turning grey: brightness comes down, saturation barely moves. The transition is long enough
+   that throwing the switch reads as dimming rather than as a repaint. */
+:root[data-theme='dark'] .mascot {
+  filter: brightness(0.78) saturate(0.92);
+}
+
+.mascot {
+  transition: filter 900ms ease-out;
 }

@@ -5,7 +5,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { Canvas, encodePng, upscale } from './canvas.mjs';
-import { EXPRESSIONS, MOODS, POSES } from './mascot.mjs';
+import { EXPRESSIONS, MOODS, POSES, REQUIRED_POSES } from './mascot.mjs';
 
 /** @typedef {import('./mascot.mjs').FrameSpec} FrameSpec */
 
@@ -27,12 +27,18 @@ export const FRAME = 32;
  */
 export function buildSheet(mascot) {
   if (!(mascot.stridePx > 0)) throw new Error(`Mascot ${mascot.id} declares no walk stride.`);
-  const rows = POSES.length + 1;
-  // One row per pose, as wide as the longest pose that mascot draws. A mascot that spends eight
+  const drawn = POSES.filter((pose) => (mascot.frames[pose.name] ?? []).length > 0);
+  for (const name of REQUIRED_POSES) {
+    if (!drawn.some((pose) => pose.name === name)) {
+      throw new Error(`No frames for pose ${name} of ${mascot.id}.`);
+    }
+  }
+  const rows = drawn.length + 1;
+  // One row per pose the mascot draws, as wide as its longest pose. A mascot that spends eight
   // frames on its idle gets an eight column sheet; the renderer reads the tags, not the grid.
   const columns = Math.max(
     EXPRESSIONS.length,
-    ...POSES.map((pose) => (mascot.frames[pose.name] ?? []).length),
+    ...drawn.map((pose) => (mascot.frames[pose.name] ?? []).length),
   );
   const sheet = new Canvas(FRAME * columns, FRAME * rows);
   /** @type {Record<string, AsepriteFrame>} */
@@ -64,10 +70,9 @@ export function buildSheet(mascot) {
     index++;
   };
 
-  POSES.forEach((pose, row) => {
+  drawn.forEach((pose, row) => {
     const from = index;
     const specs = mascot.frames[pose.name] ?? [];
-    if (specs.length === 0) throw new Error(`No frames for pose ${pose.name} of ${mascot.id}.`);
     specs.forEach((spec, column) => {
       offsetX.push(spec.bobX ?? 0);
       offsetY.push(spec.bobY ?? 0);
@@ -80,7 +85,7 @@ export function buildSheet(mascot) {
   EXPRESSIONS.forEach((expression, column) => {
     offsetX.push(0);
     offsetY.push(0);
-    place(mascot.drawExpression(expression), column, POSES.length, 100);
+    place(mascot.drawExpression(expression), column, drawn.length, 100);
   });
   frameTags.push({
     name: 'expressions',

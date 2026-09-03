@@ -16,6 +16,12 @@ const EVENT_DESCRIPTION: Record<SpeechEvent, string> = {
   hello: 'the creature greets the user as the day or session begins',
   sleepy: 'the creature is getting sleepy and is about to doze off',
   poke: 'the user just clicked or poked the creature',
+  pet: 'the user is petting the creature, which it likes',
+  startle: 'the user shook the pointer at the creature and startled it',
+  // The track is deliberately not in the context anywhere, so what the user listens to never
+  // reaches a model. The creature knows that music is on and nothing more than that.
+  dance: 'music is playing somewhere on the machine and the creature is dancing to it',
+  dayEnd: 'the working day is over or nearly over',
 };
 
 export function buildPrompt(request: SpeechRequest): { system: string; user: string } {

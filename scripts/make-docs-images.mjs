@@ -240,10 +240,12 @@ writeFileSync(join(outDir, 'wisp.png'), encodePng(portrait));
 // One frame per pose, in the order the state machine usually walks through them. The second
 // frame of each pose, since a pose's first frame is often its rest and the second is where it
 // has moved; celebrate shows its third, which is the top of the hop.
-const showcase = ['idle', 'walk', 'sit', 'sleep', 'alert', 'drag'].map(
+const showcase = ['idle', 'walk', 'sit', 'sleep', 'alert', 'drag', 'dance', 'pet'].map(
   (pose) => (wispStarts[pose] ?? 0) + 1,
 );
 showcase.push((wispStarts.celebrate ?? 0) + 2);
+// Startle shows its second frame, the top of the jump, where the flame is at its widest.
+showcase.push((wispStarts.startle ?? 0) + 1);
 const gap = 10;
 const scale = 3;
 const strip = blank(showcase.length * (FRAME * scale + gap) - gap, FRAME * scale);

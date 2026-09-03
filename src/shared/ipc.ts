@@ -1,5 +1,11 @@
 import type { PoseUpdate } from './actor';
 import type { Config } from './config';
+import type {
+  CustomArtError,
+  CustomArtImportResult,
+  CustomMascot,
+  CustomMascotSummary,
+} from './custom-art';
 import type { Mood } from './mood';
 import type { DayItem, Signal, SignalAction, SignalSource, SignalsStatus } from './signals';
 import type { SpeechStatus } from './speech';
@@ -23,6 +29,7 @@ export const IPC = {
   dayList: 'wisp:day-list',
   dayChanged: 'wisp:day-changed',
   actionRun: 'wisp:action-run',
+  pet: 'wisp:pet',
   panelToggle: 'wisp:panel-toggle',
   panelClose: 'wisp:panel-close',
   secretSet: 'wisp:secret-set',
@@ -33,6 +40,12 @@ export const IPC = {
   speechTest: 'wisp:speech-test',
   moodGet: 'wisp:mood-get',
   moodChanged: 'wisp:mood-changed',
+  customArtExport: 'wisp:custom-art-export',
+  customArtCheck: 'wisp:custom-art-check',
+  customArtImport: 'wisp:custom-art-import',
+  customMascotList: 'wisp:custom-mascot-list',
+  customMascotLoad: 'wisp:custom-mascot-load',
+  customMascotDelete: 'wisp:custom-mascot-delete',
 } as const;
 
 export interface DragStart {
@@ -45,6 +58,17 @@ export interface EnvironmentInfo {
   shortcut: string;
   shortcutRegistered: boolean;
   autostartPath: string;
+}
+
+/** Where the starter kit landed and how many files it added. */
+export interface CustomArtExport {
+  dir: string;
+  count: number;
+}
+
+export interface CustomArtCheck {
+  dir: string;
+  errors: CustomArtError[];
 }
 
 export interface BubbleMessage {
@@ -71,6 +95,8 @@ export interface WispApi {
   listDay(): Promise<DayItem[]>;
   onDayChanged(listener: (items: DayItem[]) => void): () => void;
   runAction(signalId: string, action: SignalAction): Promise<DayItem[]>;
+  /** A double click on the mascot. */
+  pet(): void;
   togglePanel(): void;
   closePanel(): void;
   setSecret(name: 'gruply', value: string): Promise<Record<string, boolean>>;
@@ -81,4 +107,12 @@ export interface WispApi {
   testSpeech(): Promise<{ text: string; source: 'model' | 'fallback'; latencyMs: number }>;
   getMood(): Promise<Mood>;
   onMoodChanged(listener: (mood: Mood) => void): () => void;
+  /** Each of these opens a folder picker in main. Null means the picker was closed. */
+  exportArtTemplate(): Promise<CustomArtExport | null>;
+  checkArtFolder(): Promise<CustomArtCheck | null>;
+  importCustomMascot(name?: string): Promise<CustomArtImportResult | null>;
+  listCustomMascots(): Promise<CustomMascotSummary[]>;
+  loadCustomMascot(slug: string): Promise<CustomMascot | null>;
+  /** Resolves to what is left. A slug that is not one of ours deletes nothing. */
+  deleteCustomMascot(slug: string): Promise<CustomMascotSummary[]>;
 }

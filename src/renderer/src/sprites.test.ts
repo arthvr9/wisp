@@ -41,6 +41,28 @@ function withTags(tags: AsepriteJson['meta']['frameTags']): AsepriteJson {
 }
 
 describe('parseSheet', () => {
+  it('borrows a pose a sheet does not declare', () => {
+    // The fixture has no dance, pet or startle tag, which is the shape of every sheet drawn
+    // before those poses existed and of a hand drawn mascot that only covers a few poses.
+    const sheet = parseSheet(json);
+    expect(sheet.animations.dance).toEqual(sheet.animations.idle);
+    expect(sheet.animations.pet).toEqual(sheet.animations.idle);
+    expect(sheet.animations.startle).toEqual(sheet.animations.alert);
+  });
+
+  it('prefers a declared pose over the one it would borrow', () => {
+    const sheet = parseSheet(
+      withTags([...json.meta.frameTags, { name: 'dance', from: 3, to: 4, direction: 'forward' }]),
+    );
+    expect(sheet.animations.dance).toHaveLength(2);
+    expect(sheet.animations.dance).not.toEqual(sheet.animations.idle);
+  });
+
+  it('still refuses a sheet missing a pose with nothing to borrow', () => {
+    const without = json.meta.frameTags.filter((t) => t.name !== 'idle');
+    expect(() => parseSheet(withTags(without))).toThrow(/idle/);
+  });
+
   it('groups frames per pose tag', () => {
     const sheet = parseSheet(json);
     expect(sheet.animations.idle).toEqual([
