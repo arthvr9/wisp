@@ -32,7 +32,8 @@ const SCALE = 4;
 const MARGIN = 2;
 
 /** The mascot the owner likes most, used for the single mascot GIFs. */
-const HERO = 'cat';
+// The wisp is the namesake and the default, so it is the one the README leads with.
+const HERO = 'wisp';
 
 /** The picker order, matching scripts/lib/mascots/index.mjs. */
 const MASCOTS = ['wisp', 'coffee', 'cat', 'ghost', 'plant'];

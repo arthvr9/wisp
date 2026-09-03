@@ -10,7 +10,6 @@ import { EXPRESSIONS, MOODS, POSES } from './mascot.mjs';
 /** @typedef {import('./mascot.mjs').FrameSpec} FrameSpec */
 
 export const FRAME = 32;
-const COLUMNS = 4;
 
 /**
  * @typedef {object} AsepriteFrame
@@ -29,7 +28,13 @@ const COLUMNS = 4;
 export function buildSheet(mascot) {
   if (!(mascot.stridePx > 0)) throw new Error(`Mascot ${mascot.id} declares no walk stride.`);
   const rows = POSES.length + 1;
-  const sheet = new Canvas(FRAME * COLUMNS, FRAME * rows);
+  // One row per pose, as wide as the longest pose that mascot draws. A mascot that spends eight
+  // frames on its idle gets an eight column sheet; the renderer reads the tags, not the grid.
+  const columns = Math.max(
+    EXPRESSIONS.length,
+    ...POSES.map((pose) => (mascot.frames[pose.name] ?? []).length),
+  );
+  const sheet = new Canvas(FRAME * columns, FRAME * rows);
   /** @type {Record<string, AsepriteFrame>} */
   const frames = {};
   /** @type {{ name: string; from: number; to: number; direction: string }[]} */
@@ -62,13 +67,12 @@ export function buildSheet(mascot) {
   POSES.forEach((pose, row) => {
     const from = index;
     const specs = mascot.frames[pose.name] ?? [];
-    for (let column = 0; column < pose.frames; column++) {
-      const spec = specs[column];
-      if (!spec) throw new Error(`Missing frame ${column} for pose ${pose.name} of ${mascot.id}.`);
+    if (specs.length === 0) throw new Error(`No frames for pose ${pose.name} of ${mascot.id}.`);
+    specs.forEach((spec, column) => {
       offsetX.push(spec.bobX ?? 0);
       offsetY.push(spec.bobY ?? 0);
-      place(mascot.draw(spec), column, row, pose.duration);
-    }
+      place(mascot.draw(spec), column, row, spec.durationMs ?? pose.duration);
+    });
     frameTags.push({ name: pose.name, from, to: index - 1, direction: 'forward' });
   });
 
@@ -101,15 +105,44 @@ export function buildSheet(mascot) {
   return { sheet, json };
 }
 
+const PRINT_WIDTH = 100;
+
+/** A number array as Prettier lays it out: one line if it fits, otherwise packed to the margin. */
+const NUMBER_ARRAY = /^( *)("(?:[^"\\]|\\.)*": )?\[\n((?:\s*-?\d+,?\n)+) *\](,?)/gm;
+
 /**
- * Formats the Aseprite JSON the way Prettier would: short number arrays collapsed to one line,
- * so the generated file passes `prettier --check` without a second formatting pass.
+ * Formats the Aseprite JSON the way Prettier would, so the generated file passes
+ * `prettier --check` without a second formatting pass. The bob offsets are one number per frame,
+ * and a mascot that spends more frames on a pose grows them past the print width, so they have
+ * to wrap the same way Prettier wraps them rather than only being collapsed.
  * @param {unknown} json
  */
 export function formatJson(json) {
   const text = JSON.stringify(json, null, 2).replace(
-    /\[\s*(-?\d+(?:,\s*-?\d+)*)\s*\]/g,
-    (_m, items) => `[${String(items).replace(/\s+/g, ' ')}]`,
+    NUMBER_ARRAY,
+    (_m, indent, key = '', body, comma) => {
+      const items = String(body).match(/-?\d+/g) ?? [];
+      const head = `${indent}${key}[`;
+      const oneLine = `${head}${items.join(', ')}]${comma}`;
+      if (oneLine.length <= PRINT_WIDTH) return oneLine;
+      const inner = `${indent}  `;
+      /** @type {string[]} */
+      const lines = [];
+      let line = inner;
+      items.forEach((item, i) => {
+        const next = line === inner ? line + item : `${line}, ${item}`;
+        // The comma that will follow this line counts toward the margin, the way it does for
+        // Prettier: a line that fits only without its trailing comma is one character too long.
+        if (next.length + (i === items.length - 1 ? 0 : 1) > PRINT_WIDTH && line !== inner) {
+          lines.push(`${line},`);
+          line = inner + item;
+          return;
+        }
+        line = next;
+      });
+      lines.push(line);
+      return `${head}\n${lines.join('\n')}\n${indent}]${comma}`;
+    },
   );
   return text + '\n';
 }

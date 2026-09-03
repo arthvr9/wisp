@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/walk.gif" width="240" alt="The cat mascot walking across the screen">
+  <img src="docs/images/walk.gif" width="240" alt="The wisp mascot walking across the screen">
 </p>
 
 It walks around, sits down, falls asleep when you stop working, and you can pick it up with the
@@ -38,8 +38,8 @@ are not supported yet.
 </p>
 
 Five to choose from, and switching takes effect right away. They behave identically, so the
-choice is only about what you want to look at: a wisp of light, a cup of coffee, a black cat, a
-ghost, or a seedling in a pot.
+choice is only about what you want on your screen: the wisp of light it is named after, a cup
+of coffee, a black cat, a ghost, or a seedling in a pot.
 
 ## Install
 
