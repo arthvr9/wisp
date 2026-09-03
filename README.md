@@ -95,8 +95,9 @@ with PKCE and stores the tokens encrypted. The client registers itself dynamical
 is no app to create in ClickUp and no API key to paste. Only `read` is requested, though the
 server advertises `read write` and the SDK may ask for both. Nothing is ever written.
 
-Every few minutes Wisp asks for your open tasks due between seven days ago and two weeks
-ahead, validates the answer with Zod and caches it in SQLite through the built in
+Every few minutes Wisp asks for your tasks due between thirty days ago and two weeks ahead,
+including recently closed ones, so a task finished long after its due date still counts as a
+completion rather than one that quietly disappeared. It validates the answer with Zod and caches it in SQLite through the built in
 `node:sqlite`, so there is no native module to compile. Failures back off exponentially with
 jitter.
 
@@ -163,8 +164,9 @@ absent model never delays a bubble by more than that.
 Cloud providers receive task titles and the mood, and settings says so next to the option.
 Keys are stored with safeStorage, never in config.json.
 
-The voice sits behind one interface, `src/main/voice/index.ts`. With the provider off, nothing
-under `src/main/speech/` and no part of the Anthropic SDK is loaded. To remove the feature:
+The voice sits behind one interface, `src/main/voice/index.ts`. With the provider off, the
+provider adapters and the Anthropic SDK are never loaded, and the bubble always shows the fixed
+line first, replacing it only if a model answers while the same bubble is still up. To remove the feature:
 delete `src/main/speech/` and `src/main/voice/model.ts`, return `silentVoice()` from
 `createVoice`, drop the Voice section from settings and `@anthropic-ai/sdk` from package.json.
 

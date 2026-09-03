@@ -36,6 +36,8 @@ export const en = {
   'settings.clickup.lastSync': 'Last sync {time}.',
   'settings.clickup.nextSync': 'Next sync {time}.',
   'settings.clickup.error': 'Sync failed: {message}',
+  'settings.clickup.secrets':
+    'No keyring on this session, so tokens are stored as plain text in the config directory.',
   'settings.clickup.dueSoon': 'Minutes of warning before a due date',
   'settings.nudges': 'Interruptions',
   'settings.nudges.hint':

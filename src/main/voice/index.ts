@@ -9,9 +9,9 @@ export interface SpokenLine {
 }
 
 // The only surface the rest of the app knows about. Main never imports src/main/speech; the
-// model-backed implementation loads it on demand, so with the provider off nothing from that
-// directory (or the Anthropic SDK) is ever loaded. Deleting speech/ and voice/model.ts and
-// returning silentVoice() from createVoice is enough to remove the feature.
+// model-backed implementation loads it on demand, so with the provider off neither the
+// provider adapters nor the Anthropic SDK are ever loaded. Deleting speech/ and voice/model.ts
+// and returning silentVoice() from createVoice is enough to remove the feature.
 export interface Voice {
   start(): Promise<void>;
   configure(config: SpeechConfig): void;
@@ -51,6 +51,19 @@ export function createVoice(
   return lazyVoice(secrets, config, onStatus);
 }
 
+// Settings asks for the status every time it opens, and with the voice off that must not drag
+// in the provider adapters. Ollama detection is its own small module with no SDK behind it.
+async function offStatus(): Promise<SpeechStatus> {
+  const { detectOllama } = await import('../speech/ollama');
+  const found = await detectOllama();
+  return {
+    provider: 'off',
+    ollamaDetected: found.found,
+    ollamaModels: found.models,
+    hasApiKey: false,
+  };
+}
+
 function lazyVoice(
   secrets: SecretStore,
   initial: SpeechConfig,
@@ -82,7 +95,7 @@ function lazyVoice(
       }
     },
     setApiKey: (key) => load().then((v) => v.setApiKey(key)),
-    current: () => load().then((v) => v.current()),
+    current: () => (loaded ? load().then((v) => v.current()) : offStatus()),
     say: (event, name, mood, fallback, context) =>
       active().then((v) => v.say(event, name, mood, fallback, context)),
   };

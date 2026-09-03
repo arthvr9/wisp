@@ -441,6 +441,9 @@ export function SettingsPage() {
                 : ''}
             </p>
           )}
+          {signals && !signals.secretsEncrypted && (
+            <p className="hint notice">{t('settings.clickup.secrets')}</p>
+          )}
           <div className="actions">
             {signals?.clickup.state === 'connected' || signals?.clickup.state === 'error' ? (
               <>
@@ -543,7 +546,9 @@ export function SettingsPage() {
               value={config.budget.maxPerHour}
               onChange={(e) => {
                 const n = Number(e.target.value);
-                if (n >= 1 && n <= 20) save({ budget: { ...config.budget, maxPerHour: n } });
+                if (Number.isFinite(n) && n >= 1 && n <= 20) {
+                  save({ budget: { ...config.budget, maxPerHour: n } });
+                }
               }}
             />
             <label className="inline" htmlFor="perDay">
@@ -557,7 +562,9 @@ export function SettingsPage() {
               value={config.budget.maxPerDay}
               onChange={(e) => {
                 const n = Number(e.target.value);
-                if (n >= 1 && n <= 100) save({ budget: { ...config.budget, maxPerDay: n } });
+                if (Number.isFinite(n) && n >= 1 && n <= 100) {
+                  save({ budget: { ...config.budget, maxPerDay: n } });
+                }
               }}
             />
           </div>

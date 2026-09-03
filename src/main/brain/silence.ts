@@ -17,20 +17,29 @@ function parseClock(value: string): number | undefined {
   return hours * 60 + minutes;
 }
 
+export type TzOffsetAt = (atMs: number) => number;
+
+const systemOffset: TzOffsetAt = (atMs) => new Date(atMs).getTimezoneOffset();
+
+/**
+ * The offset is read per day rather than once, because the day a clock change falls on has a
+ * different offset from the day around it and a fixed one puts that night's window an hour off.
+ */
 export function quietHoursWindows(
   quiet: QuietHours,
   nowMs: number,
-  tzOffsetMinutes = new Date(nowMs).getTimezoneOffset(),
+  tzOffset: number | TzOffsetAt = systemOffset,
 ): SilenceWindow[] {
   if (!quiet.enabled) return [];
   const start = parseClock(quiet.start);
   const end = parseClock(quiet.end);
   if (start === undefined || end === undefined || start === end) return [];
 
+  const offsetAt: TzOffsetAt = typeof tzOffset === 'number' ? () => tzOffset : tzOffset;
   const spanMinutes = end > start ? end - start : end - start + 24 * 60;
-  const today = localDayStart(nowMs, tzOffsetMinutes);
   return [-1, 0, 1].map((day) => {
-    const from = today + day * DAY_MS + start * MINUTE_MS;
+    const around = nowMs + day * DAY_MS;
+    const from = localDayStart(around, offsetAt(around)) + start * MINUTE_MS;
     return { from, to: from + spanMinutes * MINUTE_MS, source: 'quiet-hours', allowUrgent: true };
   });
 }

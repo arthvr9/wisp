@@ -9,7 +9,6 @@ import type { Mood } from '../shared/mood';
 // GNOME has no tray of its own. The AppIndicator extension provides one through the
 // StatusNotifier D-Bus interface, so its presence on the session bus is the test.
 export function detectTray(): Promise<boolean> {
-  if (process.platform !== 'linux') return Promise.resolve(true);
   return new Promise((resolve) => {
     execFile('busctl', ['--user', '--no-pager', 'list'], { timeout: 3000 }, (err, stdout) => {
       resolve(!err && stdout.includes('org.kde.StatusNotifierWatcher'));

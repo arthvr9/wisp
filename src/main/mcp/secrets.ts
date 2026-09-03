@@ -34,7 +34,7 @@ export class SecretStore {
   }
 
   set(key: string, value: unknown): void {
-    mkdirSync(this.dir, { recursive: true });
+    mkdirSync(this.dir, { recursive: true, mode: 0o700 });
     const text = JSON.stringify(value);
     const encrypted = this.canEncrypt();
     const body = encrypted ? this.storage.encryptString(text) : Buffer.from(text, 'utf8');
@@ -44,6 +44,10 @@ export class SecretStore {
 
   delete(key: string): void {
     rmSync(this.pathFor(key), { force: true });
+  }
+
+  encryptionAvailable(): boolean {
+    return this.storage.isEncryptionAvailable();
   }
 
   private canEncrypt(): boolean {

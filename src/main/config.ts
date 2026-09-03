@@ -6,9 +6,14 @@ import type { Config } from '../shared/config';
 
 type Listener = (config: Config) => void;
 
+// Settings inputs save on every keystroke and the main process also drives the 33 ms mascot
+// loop, so the write is debounced and flushed on quit.
+const WRITE_DELAY_MS = 400;
+
 export class ConfigStore {
   private config: Config;
   private readonly listeners = new Set<Listener>();
+  private pendingWrite: NodeJS.Timeout | undefined;
 
   constructor(private readonly path: string) {
     this.config = load(path);
@@ -20,10 +25,21 @@ export class ConfigStore {
 
   set(patch: Partial<Config>): Config {
     this.config = normalizeConfig({ ...this.config, ...patch });
-    mkdirSync(dirname(this.path), { recursive: true });
-    writeFileSync(this.path, JSON.stringify(this.config, null, 2) + '\n');
+    if (this.pendingWrite) clearTimeout(this.pendingWrite);
+    this.pendingWrite = setTimeout(() => {
+      this.flush();
+    }, WRITE_DELAY_MS);
     for (const listener of this.listeners) listener(this.config);
     return this.config;
+  }
+
+  flush(): void {
+    if (this.pendingWrite) {
+      clearTimeout(this.pendingWrite);
+      this.pendingWrite = undefined;
+    }
+    mkdirSync(dirname(this.path), { recursive: true });
+    writeFileSync(this.path, JSON.stringify(this.config, null, 2) + '\n');
   }
 
   onChange(listener: Listener): () => void {

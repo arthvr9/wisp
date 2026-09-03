@@ -14,10 +14,11 @@ describe('nextDelayMs', () => {
     expect(nextDelayMs({ baseMs: 1000, failures: 3, rng: () => 0.5 })).toBe(8000);
   });
 
-  it('caps the backoff at maxMs before jitter', () => {
+  it('never returns more than maxMs, jitter included', () => {
+    expect(nextDelayMs({ baseMs: 1000, failures: 10, rng: () => 0.99, maxMs: 5000 })).toBe(5000);
     expect(nextDelayMs({ baseMs: 1000, failures: 10, rng: () => 0.5, maxMs: 5000 })).toBe(5000);
-    expect(nextDelayMs({ baseMs: 1000, failures: 10, rng: () => 0, maxMs: 5000 })).toBe(2500);
-    expect(nextDelayMs({ baseMs: 60_000, failures: 20, rng: () => 0.5 })).toBe(60 * 60_000);
+    expect(nextDelayMs({ baseMs: 1000, failures: 0, rng: () => 0, maxMs: 5000 })).toBe(500);
+    expect(nextDelayMs({ baseMs: 60_000, failures: 20, rng: () => 0.99 })).toBe(60 * 60_000);
   });
 });
 

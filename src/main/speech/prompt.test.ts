@@ -22,7 +22,7 @@ describe('buildPrompt', () => {
 
   it('puts the context and the reference line in the user prompt', () => {
     const { user } = buildPrompt(request);
-    expect(user).toContain('Task title: Write the report');
+    expect(user).toContain('Task title: <title>Write the report</title>');
     expect(user).toContain('Minutes left: 10');
     expect(user).toContain('Due in 10 min: Write the report');
     expect(user).not.toContain('Count:');

@@ -161,14 +161,25 @@ describe('follow', () => {
     expect(s.pose).toBe('walk');
   });
 
-  it('never yields a goal from alternating known and stale cursor samples', () => {
+  it('freezes the hold on a stale cursor sample instead of dropping it', () => {
     let s = { ...grounded(1, 1800), poseUntilMs: 60_000 };
-    for (let i = 0; i < 200; i++) {
-      const cursor: Cursor = { displayId: i % 2 === 0 ? 2 : undefined, idleMs: 0 };
-      s = tick(s, two, 100, fixed(0.5), cursor, true);
-    }
+    const stale: Cursor = { displayId: undefined, idleMs: 0 };
+    s = run(s, two, 2000, 100, fixed(0.5), { displayId: 2, idleMs: 0 }, true);
+    expect(s.follow.heldMs).toBeGreaterThan(1800);
+    const held = s.follow.heldMs;
+    s = run(s, two, 5000, 100, fixed(0.5), stale, true);
+    expect(s.follow.heldMs).toBe(held);
     expect(s.goalDisplayId).toBeUndefined();
-    expect(s.pose).toBe('idle');
+    s = run(s, two, 1500, 100, fixed(0.5), { displayId: 2, idleMs: 0 }, true);
+    expect(s.goalDisplayId).toBe(2);
+  });
+
+  it('drops the goal when the cursor comes back before the walk arrives', () => {
+    let s = { ...grounded(1, 1800), poseUntilMs: 60_000 };
+    s = run(s, two, 3200, 100, fixed(0.5), { displayId: 2, idleMs: 0 }, true);
+    expect(s.goalDisplayId).toBe(2);
+    s = tick(s, two, 100, fixed(0.5), { displayId: 1, idleMs: 0 }, true);
+    expect(s.goalDisplayId).toBeUndefined();
   });
 
   it('resets follow state when following is disabled', () => {

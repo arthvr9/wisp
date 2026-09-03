@@ -7,8 +7,9 @@ export function nextDelayMs(input: {
   maxMs?: number;
 }): number {
   const max = input.maxMs ?? defaultMaxMs;
-  const backoff = Math.min(input.baseMs * 2 ** Math.max(0, input.failures), max);
-  return Math.round(backoff * (0.5 + input.rng()));
+  const backoff = input.baseMs * 2 ** Math.max(0, input.failures);
+  // Jitter first, then clamp, so the cap is a real ceiling rather than an average.
+  return Math.round(Math.min(backoff * (0.5 + input.rng()), max));
 }
 
 type TimerHandle = ReturnType<typeof setTimeout>;

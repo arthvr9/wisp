@@ -65,7 +65,7 @@ describe('fetchClickUpSignals', () => {
     expect(tools.calls[1]?.name).toBe('clickup_filter_tasks');
     expect(tools.calls[1]?.args).toEqual({
       assignees: ['42'],
-      due_date_from: '2026-08-26',
+      due_date_from: '2026-08-03',
       due_date_to: '2026-09-05',
       order_by: 'due_date',
       include_closed: true,
@@ -161,14 +161,22 @@ describe('fetchClickUpSignals', () => {
     expect(signals.map((s) => s.id)).toEqual(['clickup:a']);
   });
 
-  it('reports a validation error naming the tool and the field', async () => {
+  it('skips a malformed task and keeps the rest of the page', async () => {
     const tools = fakeTools(['f_filter_tasks', 'r_resolve_assignees'], (n) =>
       n === 'r_resolve_assignees'
         ? { userIds: ['1'] }
-        : page([task('a', { list: { id: 'l1' } })], 0, false),
+        : page([task('a', { list: { id: 'l1' } }), task('b')], 0, false),
+    );
+    const signals = await fetchClickUpSignals(tools, { nowMs: now, horizonDays: 1 });
+    expect(signals.map((s) => s.id)).toEqual(['clickup:b']);
+  });
+
+  it('reports a validation error naming the tool when the page itself is wrong', async () => {
+    const tools = fakeTools(['f_filter_tasks', 'r_resolve_assignees'], (n) =>
+      n === 'r_resolve_assignees' ? { userIds: ['1'] } : { nope: true },
     );
     await expect(fetchClickUpSignals(tools, { nowMs: now, horizonDays: 1 })).rejects.toThrow(
-      /Unexpected response from f_filter_tasks: tasks\.0\.list\.name/,
+      /Unexpected response from f_filter_tasks: tasks/,
     );
   });
 

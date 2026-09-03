@@ -107,21 +107,27 @@ void app.whenReady().then(async () => {
         return t('phrase.dueToday', { title: n.title });
     }
   };
-  let speaking = false;
-  const sayThen = (
+  // The bubble shows the fixed line at once and swaps in the model's line only if one arrives
+  // while the same bubble is still up. CLAUDE.md is explicit that the bubble never waits.
+  let bubbleSeq = 0;
+  const speak = (
     event: SpeechEvent,
     fallback: string,
     context: SpeechRequest['context'],
-    show: (text: string) => void,
+    url: string | undefined,
+    poseMs: number,
+    pose: () => void,
   ) => {
-    speaking = true;
+    bubbleSeq += 1;
+    const seq = bubbleSeq;
+    bubble.show(url === undefined ? { text: fallback } : { text: fallback, url });
+    bubbleUntil = Date.now() + poseMs;
+    pose();
     void voice
       .say(event, config.get().name, connectors.currentMood(), fallback, context)
       .then((r) => {
-        show(r.text);
-      })
-      .finally(() => {
-        speaking = false;
+        if (r.source !== 'model' || seq !== bubbleSeq || !bubble.isVisible()) return;
+        bubble.show(url === undefined ? { text: r.text } : { text: r.text, url });
       });
   };
   const showNext = (nowMs: number) => {
@@ -129,13 +135,12 @@ void app.whenReady().then(async () => {
     if (!next) return;
     connectors.recordShown(next, nowMs);
     const context = { title: next.title, minutesLeft: next.minutesLeft, kind: next.kind };
-    sayThen('nudge', phrase(next), context, (text) => {
-      bubble.show({ text, url: next.url });
-      bubbleUntil = Date.now() + BUBBLE_MS;
+    speak('nudge', phrase(next), context, next.url, BUBBLE_MS, () => {
       actor = reduce(actor, { type: 'alert', ms: BUBBLE_MS }, target);
     });
   };
   const celebrate = (c: Celebration) => {
+    if (hidden || actor.paused || bubble.isVisible()) return;
     const key =
       c.intensity === 1
         ? 'phrase.celebrate.1'
@@ -143,10 +148,8 @@ void app.whenReady().then(async () => {
           ? 'phrase.celebrate.2'
           : 'phrase.celebrate.3';
     const fallback = t(key, { title: c.titles[0] ?? '', count: c.count });
-    const ms = c.intensity === 1 ? 2500 : c.intensity === 2 ? 4000 : 6000;
-    sayThen('celebrate', fallback, { count: c.count, title: c.titles[0] }, (text) => {
-      bubble.show({ text });
-      bubbleUntil = Date.now() + Math.max(ms, 4000);
+    const ms = Math.max(c.intensity === 1 ? 2500 : c.intensity === 2 ? 4000 : 6000, 4000);
+    speak('celebrate', fallback, { count: c.count, title: c.titles[0] }, undefined, ms, () => {
       actor = reduce(actor, { type: 'celebrate', intensity: c.intensity }, target);
     });
   };
@@ -185,7 +188,9 @@ void app.whenReady().then(async () => {
     refreshMenus();
   };
   ipcMain.handle(IPC.speechStatusGet, () => voice.current());
-  ipcMain.handle(IPC.speechSetApiKey, (_event, key: string) => voice.setApiKey(key));
+  ipcMain.handle(IPC.speechSetApiKey, (_event, key: unknown) =>
+    voice.setApiKey(typeof key === 'string' ? key.slice(0, 400) : ''),
+  );
   ipcMain.handle(IPC.speechTest, async () => {
     const r = await voice.say(
       'poke',
@@ -205,6 +210,7 @@ void app.whenReady().then(async () => {
   app.on('before-quit', () => {
     silence.stop();
     connectors.close();
+    config.flush();
   });
 
   const refreshDisplays = () => {
@@ -232,10 +238,8 @@ void app.whenReady().then(async () => {
       refreshMenus();
     },
     poke() {
-      actor = reduce(actor, { type: 'alert', ms: 4000 }, target);
-      sayThen('poke', t('phrase.poke'), {}, (text) => {
-        bubble.show({ text });
-        bubbleUntil = Date.now() + 4000;
+      speak('poke', t('phrase.poke'), {}, undefined, 4000, () => {
+        actor = reduce(actor, { type: 'alert', ms: 4000 }, target);
       });
     },
     toggleSnooze() {
@@ -314,6 +318,7 @@ void app.whenReady().then(async () => {
 
   let drag: DragStart | undefined;
   ipcMain.on(IPC.dragStart, (_event, offset: DragStart) => {
+    if (!Number.isFinite(offset.offsetX) || !Number.isFinite(offset.offsetY)) return;
     drag = offset;
     actor = reduce(actor, { type: 'drag-start' }, target);
   });
@@ -435,6 +440,7 @@ void app.whenReady().then(async () => {
 
     let last = performance.now();
     let nextDueCheck = 0;
+    let nextCelebrationCheck = 0;
     setInterval(() => {
       const now = performance.now();
       const dt = now - last;
@@ -466,6 +472,10 @@ void app.whenReady().then(async () => {
       if (nowMs >= nextDueCheck) {
         nextDueCheck = nowMs + 30_000;
         enqueue(connectors.decide(nowMs).nudges);
+      } else if (nowMs >= nextCelebrationCheck) {
+        // Celebrations aggregate over 30 s, so they need a finer poll than the nudge decision.
+        nextCelebrationCheck = nowMs + 2000;
+        connectors.pollCelebration(nowMs);
       }
       if (bubble.isVisible()) {
         if (nowMs >= bubbleUntil || hidden) bubble.hide();
@@ -473,7 +483,7 @@ void app.whenReady().then(async () => {
           const d = target.displays.find((x) => x.id === actor.displayId);
           bubble.follow(actor.x, actor.y, d?.x ?? 0, (d?.x ?? 0) + (d?.width ?? 1920));
         }
-      } else if (queue.length > 0 && !hidden && !actor.paused && !speaking) {
+      } else if (queue.length > 0 && !hidden && !actor.paused) {
         showNext(nowMs);
       }
     }, TICK_MS);

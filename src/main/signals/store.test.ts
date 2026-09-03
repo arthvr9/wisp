@@ -90,19 +90,26 @@ describe('SignalStore', () => {
     expect(store.list()).toEqual([a]);
   });
 
-  it('keeps nudge history for a day plus the latest record per signal and kind', () => {
+  it('keeps every nudge record inside the retention window', () => {
     const hour = 60 * 60 * 1000;
     const now = 100 * hour;
     store.recordNudge({ signalId: 'clickup:a', kind: 'overdue', at: now - 50 * hour });
     store.recordNudge({ signalId: 'clickup:a', kind: 'overdue', at: now - 30 * hour });
-    store.recordNudge({ signalId: 'clickup:b', kind: 'due-soon', at: now - 2 * hour });
     store.recordNudge({ signalId: 'clickup:b', kind: 'due-soon', at: now - hour });
     const history = store.nudgeHistory(now);
     expect(history).toEqual([
+      { signalId: 'clickup:a', kind: 'overdue', at: now - 50 * hour },
       { signalId: 'clickup:a', kind: 'overdue', at: now - 30 * hour },
-      { signalId: 'clickup:b', kind: 'due-soon', at: now - 2 * hour },
       { signalId: 'clickup:b', kind: 'due-soon', at: now - hour },
     ]);
+    expect(store.nudgeHistory(now, 2 * hour)).toHaveLength(1);
+  });
+
+  it('prunes records older than the retention window when writing', () => {
+    const now = 40 * 24 * 60 * 60 * 1000;
+    store.recordNudge({ signalId: 'clickup:a', kind: 'overdue', at: 0 });
+    store.recordNudge({ signalId: 'clickup:a', kind: 'overdue', at: now });
+    expect(store.nudgeHistory(now)).toEqual([{ signalId: 'clickup:a', kind: 'overdue', at: now }]);
   });
 
   it('stores meta values', () => {
