@@ -62,6 +62,8 @@ const CLICK_MAX_DISTANCE = 4;
 const CLICK_MAX_DURATION_MS = 400;
 const DOUBLE_CLICK_MS = 220;
 
+// Art, not interface, which is why these are here and not in theme.css. A trophy is gold in
+// night mode too, the same way the mascot stays purple in it.
 const GOLD = '#facc15';
 const GOLD_DARK = '#ca8a04';
 const SPARKLE = '#fef3c7';

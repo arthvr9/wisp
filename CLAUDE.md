@@ -121,8 +121,11 @@ Added after the roadmap closed. The rules that hold this together:
   dedicated music player is trusted directly. Getting this wrong means dancing during a call.
 - What the user is listening to is user content. It never reaches a log, an IPC payload to any
   window, or a language model. The creature knows that music is on and nothing more.
-- Colour lives in `src/renderer/src/theme.css` and nowhere else. A hardcoded colour is invisible
-  in one of the two themes, so there is no such thing as a small exception to this.
+- Interface colour lives in `src/renderer/src/theme.css` and nowhere else. A hardcoded one is
+  invisible in one of the two themes, so there is no such thing as a small exception to this.
+  Art is not interface: the trophy the renderer paints onto the mascot canvas is gold in both
+  themes for the same reason the sprite is purple in both. Those constants stay next to the
+  drawing code and say so.
 - Night mode is a switch the user throws. It follows neither the clock nor the system theme.
 - Poses added after art already existed are optional in a sheet. `sprites.ts` names a pose to
   borrow for each of them, and the sheet generator leaves the tag out rather than failing. This
