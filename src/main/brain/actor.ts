@@ -176,10 +176,16 @@ function applyFollow(
   if (!enabled) {
     return { ...state, follow: initialFollow, goalDisplayId: undefined };
   }
-  if (cursor.displayId === undefined) return { ...state, follow: initialFollow };
+  // A stale cursor sample freezes the hysteresis instead of resetting it. Under XWayland the
+  // position stops updating whenever the pointer leaves an X11 window, and a pointer resting
+  // on another monitor produces the same reading as a pointer that walked away, so resetting
+  // here would make the hold unreachable in practice.
+  if (cursor.displayId === undefined) return state;
   const result = followCursor(state.follow, state.displayId, cursor.displayId, dtMs);
-  const goalDisplayId =
-    result.goal !== undefined && result.goal !== state.displayId
+  const back = cursor.displayId === state.displayId;
+  const goalDisplayId = back
+    ? undefined
+    : result.goal !== undefined && result.goal !== state.displayId
       ? result.goal
       : state.goalDisplayId;
   return { ...state, follow: result.state, goalDisplayId };

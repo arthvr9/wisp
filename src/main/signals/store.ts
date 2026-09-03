@@ -24,6 +24,13 @@ interface Row {
   closedAt: number | undefined;
 }
 
+// Long enough for the 14 day overdue escalation to see its own past, short enough that the
+// table stays small without a separate cleanup job.
+export const NUDGE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
+// A signal that has been gone this long is not coming back as the same row.
+export const SIGNAL_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
 const schema = `
 CREATE TABLE IF NOT EXISTS signals (
   id TEXT PRIMARY KEY,
@@ -176,6 +183,9 @@ export class SignalStore {
         markGone.run(nowMs, row.id);
         diff.gone.push(toSignal(row));
       }
+      this.db
+        .prepare('DELETE FROM signals WHERE gone_at IS NOT NULL AND gone_at < ?')
+        .run(nowMs - SIGNAL_RETENTION_MS);
       this.db.exec('COMMIT');
     } catch (err) {
       this.db.exec('ROLLBACK');
@@ -204,24 +214,19 @@ export class SignalStore {
     this.db
       .prepare('INSERT INTO nudges (signal_id, kind, at) VALUES (?, ?, ?)')
       .run(record.signalId, record.kind, record.at);
+    this.db.prepare('DELETE FROM nudges WHERE at < ?').run(record.at - NUDGE_RETENTION_MS);
   }
 
-  // Everything shown in the last day plus the latest record per signal and kind, which is
-  // what the escalation rules need to space repeats correctly.
-  nudgeHistory(nowMs: number, windowMs = 24 * 60 * 60 * 1000): NudgeRecord[] {
+  // The escalation rules count how many times a signal was nudged, so the history has to keep
+  // every record inside the retention window, not just the most recent one per kind.
+  nudgeHistory(nowMs: number, windowMs = NUDGE_RETENTION_MS): NudgeRecord[] {
     const rows = this.db
-      .prepare(
-        `SELECT signal_id, kind, at FROM nudges
-         WHERE at > ?
-         UNION
-         SELECT signal_id, kind, MAX(at) AS at FROM nudges GROUP BY signal_id, kind
-         ORDER BY at`,
-      )
+      .prepare('SELECT signal_id, kind, at FROM nudges WHERE at > ? ORDER BY at')
       .all(nowMs - windowMs);
     return rows.map((r) => ({
       signalId: text(r.signal_id),
       kind: text(r.kind) as NudgeKind,
-      at: Number(r.at),
+      at: int(r.at),
     }));
   }
 

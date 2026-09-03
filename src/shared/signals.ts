@@ -30,4 +30,5 @@ export interface SignalsStatus {
   clickup: ConnectionState;
   nextSyncAt?: number;
   silence: SilenceStatus;
+  secretsEncrypted: boolean;
 }

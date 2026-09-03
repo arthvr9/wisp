@@ -45,7 +45,8 @@ export class Connectors {
   private lastSyncAt: number | undefined;
   private mood: MoodState = initialMood;
   private celebration: CelebrationState = initialCelebration;
-  private lastQuietHourAt = 0;
+  private lastQuietHourAt: number | undefined;
+  private generation = 0;
 
   constructor(private readonly opts: ConnectorOptions) {
     const userData = app.getPath('userData');
@@ -84,6 +85,7 @@ export class Connectors {
       clickup: this.clickup,
       nextSyncAt: this.scheduler.nextAt(),
       silence: this.opts.silenceStatus(Date.now()),
+      secretsEncrypted: this.secrets.encryptionAvailable(),
     };
   }
 
@@ -98,7 +100,7 @@ export class Connectors {
       await this.host.authorize();
       this.clickup = { state: 'connected', signalCount: 0 };
       this.publish();
-      await this.scheduler.runNow();
+      // start() runs one cycle itself, so calling runNow() first would sync twice.
       this.scheduler.start();
     } catch (err) {
       this.clickup = { state: 'error', message: messageOf(err) };
@@ -108,6 +110,8 @@ export class Connectors {
   }
 
   async disconnect(): Promise<SignalsStatus> {
+    // Anything already in flight belongs to the previous generation and must not write back.
+    this.generation += 1;
     this.scheduler.stop();
     await this.host.close();
     this.provider.clear();
@@ -158,7 +162,9 @@ export class Connectors {
   }
 
   private tickMood(nowMs: number): void {
-    // One quiet-hour event per hour without a fresh overdue keeps the ladder drifting up.
+    // One quiet-hour event per hour without a fresh overdue keeps the ladder drifting up. The
+    // first tick after a start only seeds the clock, so a restart cannot earn a free hour.
+    this.lastQuietHourAt ??= nowMs;
     if (nowMs - this.lastQuietHourAt >= 60 * 60_000) {
       this.lastQuietHourAt = nowMs;
       if (!this.mood.events.some((e) => e.kind === 'overdue-new' && e.at > nowMs - 60 * 60_000)) {
@@ -166,6 +172,10 @@ export class Connectors {
       }
     }
     this.advanceMood(nowMs);
+    this.pollCelebration(nowMs);
+  }
+
+  pollCelebration(nowMs: number): void {
     const flushed = flushCelebration(this.celebration, nowMs);
     this.celebration = flushed.state;
     if (flushed.celebration) this.opts.onCelebration(flushed.celebration);
@@ -190,6 +200,8 @@ export class Connectors {
   }
 
   private async sync(): Promise<void> {
+    const generation = this.generation;
+    const stale = () => generation !== this.generation;
     try {
       if (!this.host.isConnected()) await this.host.connect();
       const now = Date.now();
@@ -197,6 +209,7 @@ export class Connectors {
         nowMs: now,
         horizonDays: HORIZON_DAYS,
       });
+      if (stale()) return;
       const diff = this.store.replaceAll('clickup', signals, now);
       if (diff.completed.length > 0) {
         this.celebration = noteCompleted(
@@ -217,6 +230,7 @@ export class Connectors {
       this.publish();
       this.opts.onNudges(this.decide(now).nudges);
     } catch (err) {
+      if (stale()) return;
       if (err instanceof NeedsAuthorizationError) {
         this.clickup = { state: 'error', message: 'authorization expired, connect again' };
       } else {

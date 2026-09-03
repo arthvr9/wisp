@@ -63,6 +63,7 @@ export function unwrapToolResult(result: ToolResultLike, tool = 'tool'): unknown
 }
 
 export class McpHost {
+  private authorizing: Promise<void> | undefined;
   private client?: Client;
   private connected = false;
 
@@ -73,7 +74,15 @@ export class McpHost {
     await this.open();
   }
 
-  async authorize(): Promise<void> {
+  authorize(): Promise<void> {
+    // A second authorize would tear down the loopback server the first one is still waiting on.
+    this.authorizing ??= this.runAuthorize().finally(() => {
+      this.authorizing = undefined;
+    });
+    return this.authorizing;
+  }
+
+  private async runAuthorize(): Promise<void> {
     const { provider } = this.opts;
     await this.close();
     await provider.beginAuthorization();

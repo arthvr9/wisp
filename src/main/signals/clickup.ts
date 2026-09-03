@@ -15,14 +15,18 @@ const taskSchema = z.looseObject({
   list: z.looseObject({ name: z.string() }),
 });
 
+// Tasks are validated one by one, so a single malformed record cannot hide every other task
+// in the page.
 const pageSchema = z.looseObject({
-  tasks: z.array(taskSchema),
+  tasks: z.array(z.unknown()),
   has_more: z.boolean().optional(),
   next_page: z.number().nullable().optional(),
 });
 
 const maxPages = 10;
-const overdueDays = 7;
+// The window reaches back far enough to still see a task that was closed long after it went
+// overdue, which is what turns it into a celebration rather than a signal that simply vanished.
+const overdueDays = 30;
 
 function localDate(ms: number): string {
   const d = new Date(ms);
@@ -103,6 +107,7 @@ export async function fetchClickUpSignals(
   const to = localDate(shiftDays(opts.nowMs, opts.horizonDays));
 
   const signals: Signal[] = [];
+  let skipped = 0;
   let page = 0;
   for (let i = 0; i < maxPages; i += 1) {
     const res = parse(
@@ -117,7 +122,13 @@ export async function fetchClickUpSignals(
         page,
       }),
     );
-    for (const t of res.tasks) {
+    for (const raw of res.tasks) {
+      const parsed = taskSchema.safeParse(raw);
+      if (!parsed.success) {
+        skipped += 1;
+        continue;
+      }
+      const t = parsed.data;
       if (t.due_date === null) continue;
       const dueAt = Number(t.due_date);
       if (!Number.isFinite(dueAt)) continue;
@@ -137,5 +148,6 @@ export async function fetchClickUpSignals(
     if (res.has_more !== true) break;
     page = res.next_page ?? page + 1;
   }
+  if (skipped > 0) console.warn(`clickup: skipped ${skipped} tasks that did not match the schema`);
   return signals;
 }
