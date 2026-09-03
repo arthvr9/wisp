@@ -17,7 +17,7 @@ import { createActor, reduce } from './brain/actor';
 import { activeSilence, quietHoursWindows } from './brain/silence';
 import { feed as feedShake, initialShake } from './brain/gesture';
 import { createLinePicker } from './brain/lines';
-import { decideMusic, initialMusicState } from './brain/music';
+import { danceAction, decideMusic, initialMusicState } from './brain/music';
 import { initialRhythm, step as rhythmStep } from './brain/rhythm';
 import type { RhythmEvent } from './brain/rhythm';
 import type { ActorState } from './brain/actor';
@@ -52,6 +52,7 @@ import { registerShortcut, SHORTCUT } from './shortcut';
 import { createBubble } from './stage/bubble';
 import { createPanel } from './stage/panel';
 import { openSettings } from './stage/settings';
+import type { Theme } from './stage/load';
 import { createStage, MASCOT_SIZE } from './stage/window';
 import { createTray, detectTray } from './tray';
 import type { TrayHandle } from './tray';
@@ -152,8 +153,9 @@ void app.whenReady().then(async () => {
   };
   const home = toArea(screen.getPrimaryDisplay());
   let actor: ActorState = createActor(home.id, home.x + 40, groundY(home, MASCOT_SIZE));
-  const stage = createStage(Math.round(actor.x), Math.round(actor.y));
-  const bubble = createBubble();
+  const theme = (): Theme => (config.get().night ? 'dark' : 'light');
+  const stage = createStage(Math.round(actor.x), Math.round(actor.y), theme());
+  const bubble = createBubble(theme());
 
   const silence = new SilenceSources();
   silence.start();
@@ -317,8 +319,13 @@ void app.whenReady().then(async () => {
   });
   ipcMain.on(IPC.pet, () => {
     if (hidden || actor.paused) return;
+    // The pose answers the click directly, so it happens whatever else is going on. The line is
+    // a line: it goes through the same gate as every other reaction, which is what keeps it out
+    // of quiet hours and stops it painting over a nudge that has already been counted.
     actor = reduce(actor, { type: 'pet' }, target);
-    speak('pet', say('phrase.pet'), {}, undefined, PET_BUBBLE_MS, () => undefined);
+    if (canReact(Date.now())) {
+      speak('pet', say('phrase.pet'), {}, undefined, PET_BUBBLE_MS, () => undefined);
+    }
   });
   ipcMain.on(IPC.panelToggle, () => {
     togglePanel();
@@ -358,7 +365,7 @@ void app.whenReady().then(async () => {
   screen.on('display-removed', refreshDisplays);
   screen.on('display-metrics-changed', refreshDisplays);
 
-  const panel = createPanel();
+  const panel = createPanel(theme());
   const togglePanel = () => {
     if (panel.isVisible()) {
       panel.hide();
@@ -451,7 +458,7 @@ void app.whenReady().then(async () => {
       refreshMenus();
     },
     openSettings() {
-      openSettings(appPath, config.get().mascot);
+      openSettings(appPath, theme(), config.get().mascot);
     },
     quit() {
       app.quit();
@@ -621,7 +628,7 @@ void app.whenReady().then(async () => {
       togglePanel();
     });
     at(5000, () => {
-      const w = openSettings(appPath, config.get().mascot);
+      const w = openSettings(appPath, theme(), config.get().mascot);
       w.webContents.once('did-finish-load', () => {
         console.log('self-test settings loaded');
         at(1500, () => {
@@ -687,7 +694,7 @@ void app.whenReady().then(async () => {
       console.log(`harness           ${minutes ?? 0} min, results in ${harness.resultsDir}`);
     pushPose();
     if (process.env.WISP_SELFTEST) selfTest();
-    if (process.env.WISP_OPEN_SETTINGS) openSettings(appPath);
+    if (process.env.WISP_OPEN_SETTINGS) openSettings(appPath, theme());
 
     let last = performance.now();
     let nextDueCheck = 0;
@@ -766,10 +773,9 @@ void app.whenReady().then(async () => {
           includeUnverified: !inMeeting(nowMs),
         });
         musicState = decision.state;
-        // The pose is dispatched whether or not the mascot is on screen, so hiding it during a
-        // song does not leave it dancing when it comes back. Only the line waits for a moment.
-        if (decision.started) actor = reduce(actor, { type: 'dance-start' }, target);
-        if (decision.stopped) actor = reduce(actor, { type: 'dance-stop' }, target);
+        // Reconcile against the pose instead of acting on the edge. See danceAction for why.
+        const action = danceAction(actor.pose, decision.dancing, actor.paused);
+        if (action !== undefined) actor = reduce(actor, { type: action }, target);
         if (decision.started && canReact(nowMs)) {
           speak('dance', say('phrase.dance'), {}, undefined, DANCE_BUBBLE_MS, () => undefined);
         } else if (decision.trackChanged && canReact(nowMs)) {

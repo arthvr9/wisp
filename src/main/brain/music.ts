@@ -1,3 +1,4 @@
+import type { Pose } from '../../shared/actor';
 import type { MusicPlayer, MusicReading } from '../../shared/music';
 
 /**
@@ -103,4 +104,22 @@ export function decideMusic(
     },
     player,
   );
+}
+
+/**
+ * What to dispatch so the pose agrees with what the music is doing, or nothing when they already
+ * agree. Comparing the two rather than acting on the moment the music started is what makes this
+ * safe: the reducer is free to drop a dance, and it does, since a drag, a nudge or a celebration
+ * all take the pose away. Acting only on the edge leaves the caller believing it is still dancing
+ * when it is not, and the dance can never come back after the interruption.
+ */
+export function danceAction(
+  pose: Pose,
+  dancing: boolean,
+  paused: boolean,
+): 'dance-start' | 'dance-stop' | undefined {
+  const wants = dancing && !paused;
+  if (wants && pose !== 'dance') return 'dance-start';
+  if (!wants && pose === 'dance') return 'dance-stop';
+  return undefined;
 }

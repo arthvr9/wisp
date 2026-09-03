@@ -188,7 +188,13 @@ export function readPng(bytes: Uint8Array): PngRead | null {
   }
   const stride = Math.ceil((width * channels * depth) / 8);
   try {
-    const raw = inflateSync(Buffer.concat(idat.map((part) => Buffer.from(part))));
+    // A PNG's header declares how many bytes its pixels take, so anything past that is either a
+    // broken file or a deliberate bomb. Without the cap a 400 kB file inside every other limit
+    // here inflates to hundreds of megabytes, because the file caps above bound what is read
+    // from disk and not what comes out of the decompressor.
+    const raw = inflateSync(Buffer.concat(idat.map((part) => Buffer.from(part))), {
+      maxOutputLength: height * (stride + 1),
+    });
     if (raw.length < height * (stride + 1)) return { width, height, rgba: null };
     const bpp = Math.max(1, Math.ceil((channels * depth) / 8));
     const pixels = unfilter(raw, height, stride, bpp);

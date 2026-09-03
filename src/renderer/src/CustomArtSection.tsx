@@ -19,16 +19,22 @@ export function CustomArtSection({ t, customMascot, onSelect }: CustomArtSection
   const [imported, setImported] = useState<CustomMascotSummary | null>(null);
   const [deleted, setDeleted] = useState<string | null>(null);
   const [errors, setErrors] = useState<CustomArtError[]>([]);
+  const [failed, setFailed] = useState(false);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let alive = true;
-    void window.wisp.listCustomMascots().then((next) => {
-      if (!alive) return;
-      setMascots(next);
-      setListed(true);
-    });
+    void window.wisp
+      .listCustomMascots()
+      .then((next) => {
+        if (!alive) return;
+        setMascots(next);
+        setListed(true);
+      })
+      .catch(() => {
+        if (alive) setListed(true);
+      });
     return () => {
       alive = false;
     };
@@ -39,6 +45,15 @@ export function CustomArtSection({ t, customMascot, onSelect }: CustomArtSection
     setImported(null);
     setDeleted(null);
     setErrors([]);
+    setFailed(false);
+  }
+
+  // Main can fail for reasons that are nobody's fault: a folder that went away, a disk that is
+  // full, a permission the picker did not have. Without this the promise rejects silently and
+  // the button just stops doing anything, which is the worst of both.
+  function onFailure() {
+    clear();
+    setFailed(true);
   }
 
   function exportTemplate() {
@@ -49,6 +64,7 @@ export function CustomArtSection({ t, customMascot, onSelect }: CustomArtSection
         clear();
         if (result) setExported(result);
       })
+      .catch(onFailure)
       .finally(() => {
         setBusy(false);
       });
@@ -68,6 +84,7 @@ export function CustomArtSection({ t, customMascot, onSelect }: CustomArtSection
         setImported(result.mascot);
         return window.wisp.listCustomMascots().then(setMascots);
       })
+      .catch(onFailure)
       .finally(() => {
         setBusy(false);
       });
@@ -84,6 +101,7 @@ export function CustomArtSection({ t, customMascot, onSelect }: CustomArtSection
         setDeleted(mascot.name);
         if (mascot.slug === customMascot) onSelect('');
       })
+      .catch(onFailure)
       .finally(() => {
         setBusy(false);
       });
@@ -121,6 +139,8 @@ export function CustomArtSection({ t, customMascot, onSelect }: CustomArtSection
       {deleted !== null && (
         <p className="hint">{t('settings.customArt.deleted', { name: deleted })}</p>
       )}
+
+      {failed && <p className="hint notice">{t('settings.customArt.failed')}</p>}
 
       {errors.length > 0 && (
         <div className="artErrors">

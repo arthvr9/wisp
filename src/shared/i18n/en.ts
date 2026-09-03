@@ -39,6 +39,8 @@ export const en = {
     'The folder for this mascot is gone, so {name} is back to the built-in art.',
   'settings.customArt.fallback': 'Every other pose uses the built-in art.',
   'settings.customArt.none': 'No drawings loaded yet.',
+  'settings.customArt.failed':
+    'That did not work. The folder may be in use or unreadable. Try again, and pick a folder you can write to.',
   'settings.customArt.use': 'Use this one',
   'settings.customArt.inUse': 'In use',
   'settings.customArt.useBuiltIn': 'Back to the built-in art',

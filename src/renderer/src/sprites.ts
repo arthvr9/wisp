@@ -68,10 +68,28 @@ export const POSES: readonly Pose[] = [
   'startle',
 ];
 
+/** The poses a sheet has to declare. Everything else names one of these to borrow. */
+type RequiredPose = 'idle' | 'walk' | 'sit' | 'sleep' | 'alert' | 'drag' | 'celebrate';
+
+const REQUIRED: readonly RequiredPose[] = [
+  'idle',
+  'walk',
+  'sit',
+  'sleep',
+  'alert',
+  'drag',
+  'celebrate',
+];
+
 // Poses drawn after the first sheets existed. A sheet without them is not a broken sheet, it is
 // an older one, so each names a pose to borrow instead. This is also what lets a hand drawn
 // mascot ship two poses rather than all ten: everything undrawn falls back rather than throwing.
-const FALLBACK: Partial<Record<Pose, Pose>> = {
+//
+// The value is a RequiredPose rather than a Pose so that a fallback can never point at another
+// optional pose. That makes the borrow always resolvable, which is why the code below has no
+// branch for a fallback that leads nowhere: the type rules it out instead of a runtime check
+// that nothing could ever reach.
+const FALLBACK: Partial<Record<Pose, RequiredPose>> = {
   dance: 'idle',
   pet: 'idle',
   startle: 'alert',
@@ -109,22 +127,19 @@ export function parseSheet(json: AsepriteJson): Sheet {
     bobX: offsetX[i] ?? 0,
     bobY: offsetY[i] ?? 0,
   }));
-  const animations: Partial<Record<Pose, Frame[]>> = {};
-  for (const pose of POSES) {
-    const declared = json.meta.frameTags.some((t) => t.name === pose);
-    if (!declared && FALLBACK[pose] !== undefined) continue;
+  const framesFor = (pose: string): Frame[] => {
     const tag = findTag(json, pose, frames.length);
-    animations[pose] = frames.slice(tag.from, tag.to + 1);
-  }
-  // Second pass, because a pose can only borrow from one that has already been resolved.
-  for (const pose of POSES) {
-    if (animations[pose] !== undefined) continue;
-    const borrowed = FALLBACK[pose];
-    const source = borrowed === undefined ? undefined : animations[borrowed];
-    if (source === undefined) {
-      throw new Error(`Sprite sheet has no frame tag "${pose}" and nothing to fall back to.`);
-    }
-    animations[pose] = source;
+    return frames.slice(tag.from, tag.to + 1);
+  };
+  // The required poses first, so every borrow below has something to borrow from. Building this
+  // as a total record is what lets the borrow be a plain lookup with no unreachable error path.
+  const required = {} as Record<RequiredPose, Frame[]>;
+  for (const pose of REQUIRED) required[pose] = framesFor(pose);
+
+  const animations: Partial<Record<Pose, Frame[]>> = { ...required };
+  for (const [pose, borrowed] of Object.entries(FALLBACK) as [Pose, RequiredPose][]) {
+    const declared = json.meta.frameTags.some((t) => t.name === pose);
+    animations[pose] = declared ? framesFor(pose) : required[borrowed];
   }
   const tag = findTag(json, EXPRESSIONS_TAG, frames.length);
   if (tag.to - tag.from + 1 !== EXPRESSIONS.length) {

@@ -40,6 +40,8 @@ export class MusicWatcher {
 
   start(): void {
     if (process.platform !== 'linux') return;
+    // Starting twice would drop the handle to the first interval and leave it polling forever.
+    if (this.timer !== undefined) return;
     void this.poll();
     this.timer = setInterval(() => void this.poll(), MUSIC_POLL_MS);
   }
@@ -60,9 +62,15 @@ export class MusicWatcher {
     try {
       this.reading = await this.reader.read(this.now());
       this.failures = this.reading.available ? 0 : this.failures + 1;
-      if (this.failures >= GIVE_UP_AFTER) this.stop();
+    } catch {
+      // The reader is written to report trouble rather than throw, so this is a bug or a machine
+      // in real distress. Either way a throw has to count against the give up rule like any other
+      // failed read, or the timer keeps firing forever and every rejection goes unhandled.
+      this.reading = emptyMusicReading(this.now());
+      this.failures += 1;
     } finally {
       this.polling = false;
     }
+    if (this.failures >= GIVE_UP_AFTER) this.stop();
   }
 }

@@ -109,6 +109,32 @@ function messages(errors: CustomArtError[]): string[] {
   return errors.map((error) => error.message);
 }
 
+describe('readPng bounds', () => {
+  it('refuses a file whose pixels inflate far past what its header declares', () => {
+    // A 32 by 32 header over an IDAT holding a gigabyte of zeroes. It sits inside every byte cap
+    // in this file, because those bound what is read from disk and not what comes out of the
+    // decompressor. Without a cap on the output this grew the process by 812 MB.
+    const ihdr = Buffer.alloc(13);
+    ihdr.writeUInt32BE(32, 0);
+    ihdr.writeUInt32BE(32, 4);
+    ihdr[8] = 8;
+    ihdr[9] = 6;
+    const bomb = rawPng({
+      width: 32,
+      height: 32,
+      depth: 8,
+      colorType: 6,
+      pixels: Buffer.alloc(64 * 1024 * 1024),
+    });
+    expect(bomb.length).toBeLessThan(1024 * 1024);
+    const before = process.memoryUsage().rss;
+    const read = readPng(bomb);
+    const grew = (process.memoryUsage().rss - before) / 1024 / 1024;
+    expect(read?.rgba).toBeNull();
+    expect(grew).toBeLessThan(64);
+  });
+});
+
 describe('the built-in sheet', () => {
   it('is where the frame size and the pose list come from', () => {
     expect(spec.frameWidth).toBe(32);

@@ -18,6 +18,7 @@
   --bubble-bg: #fbf8ff;
   --bubble-fg: #2e1a47;
   --bubble-outline: #2e1a47;
+  --focus-ring: rgba(124, 58, 237, 0.25);
 }
 
 :root[data-theme='dark'] {
@@ -39,4 +40,5 @@
   --bubble-bg: #2b2438;
   --bubble-fg: #ece7f8;
   --bubble-outline: #0f0b18;
+  --focus-ring: rgba(167, 139, 250, 0.32);
 }

@@ -58,9 +58,15 @@ describe('parseSheet', () => {
     expect(sheet.animations.dance).not.toEqual(sheet.animations.idle);
   });
 
-  it('still refuses a sheet missing a pose with nothing to borrow', () => {
-    const without = json.meta.frameTags.filter((t) => t.name !== 'idle');
-    expect(() => parseSheet(withTags(without))).toThrow(/idle/);
+  it('refuses a sheet missing one of the poses every sheet has to draw', () => {
+    // Only the seven original poses are required. A sheet without one of them is broken, and
+    // there is deliberately nothing for it to borrow, unlike the three added later.
+    for (const pose of ['idle', 'walk', 'sit', 'sleep', 'alert', 'drag', 'celebrate']) {
+      const without = json.meta.frameTags.filter((t) => t.name !== pose);
+      expect(() => parseSheet(withTags(without))).toThrow(
+        new RegExp(`no frame tag "${pose}"`, 'i'),
+      );
+    }
   });
 
   it('groups frames per pose tag', () => {

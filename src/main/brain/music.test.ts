@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { DANCE_CONFIRM_MS, DANCE_HOLD_MS, decideMusic, initialMusicState } from './music';
+import {
+  DANCE_CONFIRM_MS,
+  DANCE_HOLD_MS,
+  danceAction,
+  decideMusic,
+  initialMusicState,
+} from './music';
 import type { MusicOptions, MusicState } from './music';
 import type { MusicPlayer, MusicReading } from '../../shared/music';
 
@@ -179,5 +185,34 @@ describe('decideMusic', () => {
       expect(decision.stopped).toBe(false);
       state = decision.state;
     }
+  });
+});
+
+describe('danceAction', () => {
+  it('starts when the music is on and the mascot is doing something else', () => {
+    expect(danceAction('idle', true, false)).toBe('dance-start');
+    expect(danceAction('walk', true, false)).toBe('dance-start');
+  });
+
+  it('says nothing when the pose already agrees', () => {
+    expect(danceAction('dance', true, false)).toBeUndefined();
+    expect(danceAction('idle', false, false)).toBeUndefined();
+  });
+
+  it('stops when the music stops', () => {
+    expect(danceAction('dance', false, false)).toBe('dance-stop');
+  });
+
+  it('brings the dance back after something else took the pose away', () => {
+    // A nudge, a celebration or a drag all end the dance in the reducer. The music has not
+    // changed, so the next poll has to notice and start it again.
+    for (const pose of ['alert', 'celebrate', 'drag', 'sit'] as const) {
+      expect(danceAction(pose, true, false)).toBe('dance-start');
+    }
+  });
+
+  it('does not dance while paused, and ends a dance that was running', () => {
+    expect(danceAction('idle', true, true)).toBeUndefined();
+    expect(danceAction('dance', true, true)).toBe('dance-stop');
   });
 });
