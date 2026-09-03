@@ -95,7 +95,8 @@ function lazyVoice(
       }
     },
     setApiKey: (key) => load().then((v) => v.setApiKey(key)),
-    current: () => (loaded ? load().then((v) => v.current()) : offStatus()),
+    current: () =>
+      config.provider === 'off' && !loaded ? offStatus() : load().then((v) => v.current()),
     say: (event, name, mood, fallback, context) =>
       active().then((v) => v.say(event, name, mood, fallback, context)),
   };

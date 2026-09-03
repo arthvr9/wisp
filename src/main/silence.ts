@@ -79,7 +79,7 @@ export class SilenceSources {
   // Each poll spawns up to three short-lived processes. Skipping a tick while one is still
   // running keeps a slow session from stacking them.
   private async poll(): Promise<void> {
-    if (this.polling) return;
+    if (process.platform !== 'linux' || this.polling) return;
     this.polling = true;
     try {
       const [dnd, fullscreen] = await Promise.all([doNotDisturb(), activeX11Fullscreen()]);
