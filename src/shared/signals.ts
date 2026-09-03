@@ -40,10 +40,15 @@ export interface SignalActions {
   complete: boolean;
 }
 
+/** Which heading the panel files an item under. The order is the order they render in. */
+export type DayGroup = 'late' | 'today' | 'tomorrow' | 'week' | 'later';
+export const DAY_GROUPS: readonly DayGroup[] = ['late', 'today', 'tomorrow', 'week', 'later'];
+
 export interface DayItem {
   signal: Signal;
   minutesLeft: number;
   overdue: boolean;
+  group: DayGroup;
   snoozedUntil?: number;
   actions: SignalActions;
 }

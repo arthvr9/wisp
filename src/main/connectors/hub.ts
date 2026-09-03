@@ -33,6 +33,17 @@ import type {
 } from '../../shared/signals';
 import type { Connector } from './types';
 
+// Six days past today is the last one whose weekday name is still unambiguous, so it is where
+// the panel stops saying "Friday" and starts saying a date.
+const WEEK_DAYS = 6;
+
+// Each boundary is read from the offset of its own day rather than from today's, so a week
+// that contains a clock change still ends on local midnight instead of drifting an hour.
+function endOfLocalDay(nowMs: number, daysAhead: number): number {
+  const around = nowMs + daysAhead * DAY_MS;
+  return localDayStart(around, new Date(around).getTimezoneOffset()) + DAY_MS;
+}
+
 // One hour of quiet is long enough to be worth a dedicated action, short enough that a
 // snoozed item is back the same day rather than forgotten.
 const SNOOZE_MS = 60 * 60_000;
@@ -123,11 +134,11 @@ export class ConnectorHub {
   }
 
   day(nowMs: number): DayItem[] {
-    const tzOffsetMinutes = new Date(nowMs).getTimezoneOffset();
-    const endOfDayMs = localDayStart(nowMs, tzOffsetMinutes) + DAY_MS;
     return dayItems(this.store.list(), {
       nowMs,
-      endOfDayMs,
+      endOfDayMs: endOfLocalDay(nowMs, 0),
+      endOfTomorrowMs: endOfLocalDay(nowMs, 1),
+      endOfWeekMs: endOfLocalDay(nowMs, WEEK_DAYS),
       snoozedUntil: (signalId) => this.store.snoozedUntil(signalId, nowMs),
       canComplete: (source) => this.canComplete(source),
     });

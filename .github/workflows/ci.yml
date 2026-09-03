@@ -49,12 +49,10 @@ jobs:
       # their generator. Regenerating here and failing on a dirty tree is the only place that
       # invariant can be enforced. The generators take no time and no randomness, so a diff always
       # means someone edited the art by hand or changed the generator without rerunning it.
-      - name: Sprites match their generator
+      # The check compares pixels, not file bytes: two zlib versions encode identical pixels
+      # into different bytes, so a byte comparison fails whenever the runner's Node differs
+      # from the author's while the art is in fact unchanged.
+      - name: Art matches its generators
         run: |
           npm run sprites
-          if [ -n "$(git status --porcelain)" ]; then
-            echo "Generated art does not match the generators. Run: npm run sprites"
-            git status --porcelain
-            git diff --stat
-            exit 1
-          fi
+          node scripts/check-art.mjs
