@@ -16,7 +16,9 @@ const eventSchema = z.looseObject({
   responseStatus: z.looseObject({ response: z.string().optional() }).optional(),
   organizer: z
     .looseObject({
-      emailAddress: z.looseObject({ name: z.string().optional(), address: z.string().optional() }).optional(),
+      emailAddress: z
+        .looseObject({ name: z.string().optional(), address: z.string().optional() })
+        .optional(),
     })
     .optional(),
   webLink: z.string().optional(),

@@ -31,7 +31,7 @@ describe('graphClient', () => {
   it('sends a bearer token from the auth object against the v1.0 base URL', async () => {
     const auth = fakeAuth('tok123');
     let seenUrl = '';
-    let seenAuth: string | null = null;
+    let seenAuth: string | undefined;
     const client = graphClient(
       auth,
       fakeFetch((url, init) => {
@@ -80,7 +80,10 @@ describe('graphClient', () => {
     const auth = fakeAuth();
     const client = graphClient(
       auth,
-      fakeFetch(() => ({ status: 403, body: { error: { code: 'Forbidden', message: 'no access' } } })),
+      fakeFetch(() => ({
+        status: 403,
+        body: { error: { code: 'Forbidden', message: 'no access' } },
+      })),
     );
     await expect(client.get('/me/calendarView')).rejects.toMatchObject({
       status: 403,

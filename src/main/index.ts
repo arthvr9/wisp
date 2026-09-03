@@ -1,4 +1,13 @@
-import { app, BrowserWindow, ipcMain, Menu, powerMonitor, safeStorage, screen } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  Menu,
+  powerMonitor,
+  safeStorage,
+  screen,
+  shell,
+} from 'electron';
 import type { Display, Point } from 'electron';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -10,13 +19,15 @@ import type { ActorState } from './brain/actor';
 import { groundY } from './brain/movement';
 import type { DisplayArea, Target } from './brain/movement';
 import { ConfigStore } from './config';
-import { Connectors } from './connectors';
+import { ConnectorHub, createClickUpConnector, createOutlookConnector } from './connectors';
+import { meetingWindows } from './brain/meetings';
 import { SecretStore } from './mcp';
 import { SilenceSources } from './silence';
 import { createVoice } from './voice';
 import type { Celebration, Mood } from '../shared/mood';
 import type { SpeechEvent, SpeechRequest } from '../shared/speech';
 import type { Nudge } from '../shared/nudges';
+import type { SignalSource } from '../shared/signals';
 import { describeEnvironment, formatEnvironment } from './harness/environment';
 import { Harness, formatSummary } from './harness/metrics';
 import { menuTemplate } from './menu';
@@ -64,13 +75,10 @@ void app.whenReady().then(async () => {
   const broadcast = (channel: string, payload: unknown) => {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(channel, payload);
   };
-  const voice = createVoice(
-    new SecretStore(safeStorage, join(app.getPath('userData'), 'secrets')),
-    config.get().speech,
-    (status) => {
-      broadcast(IPC.speechStatusChanged, status);
-    },
-  );
+  const secrets = new SecretStore(safeStorage, join(app.getPath('userData'), 'secrets'));
+  const voice = createVoice(secrets, config.get().speech, (status) => {
+    broadcast(IPC.speechStatusChanged, status);
+  });
   const minutes = harnessMinutes();
   const harness =
     minutes === undefined ? undefined : new Harness(TICK_MS, join(appPath, 'harness-results'));
@@ -105,6 +113,10 @@ void app.whenReady().then(async () => {
         return t(n.repeat > 0 ? 'phrase.overdueAgain' : 'phrase.overdue', { title: n.title });
       case 'due-today':
         return t('phrase.dueToday', { title: n.title });
+      case 'meeting-soon':
+        return t('phrase.meetingSoon', { minutes: n.minutesLeft, title: n.title });
+      case 'meeting-now':
+        return t('phrase.meetingNow', { title: n.title });
     }
   };
   // The bubble shows the fixed line at once and swaps in the model's line only if one arrives
@@ -154,18 +166,30 @@ void app.whenReady().then(async () => {
     });
   };
 
-  const connectors = new Connectors({
+  const openExternal = (url: string) => shell.openExternal(url);
+  const connectors: ConnectorHub = new ConnectorHub({
+    connectors: [
+      createClickUpConnector({ secrets, openExternal, version: app.getVersion() }),
+      createOutlookConnector({ secrets, openExternal, config: () => config.get().outlook }),
+    ],
+    secrets,
     pollMinutes: () => config.get().pollMinutes,
     dueSoonMinutes: () => config.get().dueSoonMinutes,
+    meetingWarnMs: () => config.get().outlook.warnMinutes * 60_000,
     budget: () => config.get().budget,
     silence: (nowMs) => [
       ...quietHoursWindows(config.get().quietHours, nowMs),
       ...silence.windows(nowMs),
     ],
+    extraSilence: (signals) =>
+      meetingWindows(signals, { enabled: config.get().outlook.silenceDuringMeetings }),
     silenceStatus: (nowMs) => {
       const windows = [
         ...quietHoursWindows(config.get().quietHours, nowMs),
         ...silence.windows(nowMs),
+        ...meetingWindows(connectors.signals(), {
+          enabled: config.get().outlook.silenceDuringMeetings,
+        }),
       ];
       return {
         snoozedUntil: silence.snoozedUntil(nowMs),
@@ -187,6 +211,21 @@ void app.whenReady().then(async () => {
     pushPose();
     refreshMenus();
   };
+  ipcMain.handle(IPC.connectorConnect, (_event, source: SignalSource) =>
+    connectors.connect(source),
+  );
+  ipcMain.handle(IPC.connectorDisconnect, (_event, source: SignalSource) =>
+    connectors.disconnect(source),
+  );
+  ipcMain.handle(IPC.syncNow, () => connectors.syncNow());
+  ipcMain.handle(IPC.signalsStatusGet, () => connectors.status());
+  ipcMain.handle(IPC.signalsList, () => connectors.signals());
+  app.on('before-quit', () => {
+    silence.stop();
+    connectors.close();
+    config.flush();
+  });
+
   ipcMain.handle(IPC.speechStatusGet, () => voice.current());
   ipcMain.handle(IPC.speechSetApiKey, (_event, key: unknown) =>
     voice.setApiKey(typeof key === 'string' ? key.slice(0, 400) : ''),
@@ -202,16 +241,6 @@ void app.whenReady().then(async () => {
     return { text: r.text, source: r.source, latencyMs: r.latencyMs };
   });
   ipcMain.handle(IPC.moodGet, () => connectors.currentMood());
-  ipcMain.handle(IPC.clickupConnect, () => connectors.connect());
-  ipcMain.handle(IPC.clickupDisconnect, () => connectors.disconnect());
-  ipcMain.handle(IPC.clickupSyncNow, () => connectors.syncNow());
-  ipcMain.handle(IPC.signalsStatusGet, () => connectors.status());
-  ipcMain.handle(IPC.signalsList, () => connectors.signals());
-  app.on('before-quit', () => {
-    silence.stop();
-    connectors.close();
-    config.flush();
-  });
 
   const refreshDisplays = () => {
     target = { ...target, displays: screen.getAllDisplays().map(toArea) };

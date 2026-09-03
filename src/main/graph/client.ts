@@ -12,7 +12,11 @@ export class GraphError extends Error {
 }
 
 export interface GraphClient {
-  get<T>(path: string, query?: Record<string, string>, headers?: Record<string, string>): Promise<T>;
+  get<T>(
+    path: string,
+    query?: Record<string, string>,
+    headers?: Record<string, string>,
+  ): Promise<T>;
 }
 
 function extractMessage(raw: unknown): string | undefined {
@@ -45,7 +49,10 @@ export function graphClient(
       });
       const body: unknown = await res.json().catch(() => undefined);
       if (!res.ok) {
-        throw new GraphError(res.status, extractMessage(body) ?? `Graph request failed with status ${res.status}`);
+        throw new GraphError(
+          res.status,
+          extractMessage(body) ?? `Graph request failed with status ${res.status}`,
+        );
       }
       return body as T;
     },

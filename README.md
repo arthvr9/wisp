@@ -101,9 +101,29 @@ completion rather than one that quietly disappeared. It validates the answer wit
 `node:sqlite`, so there is no native module to compile. Failures back off exponentially with
 jitter.
 
-The adapter discovers tool names at runtime by suffix, because the official server's names
-were not verified against a live connection. The task shape it validates was observed through
-ClickUp's own connector. The first Connect on a real machine is still the test.
+The adapter discovers tool names at runtime by suffix rather than hardcoding them. The whole
+round trip is verified against a live workspace: dynamic client registration, the browser
+consent, the loopback redirect, the token exchange and a sync that came back with real tasks.
+
+## Outlook calendar
+
+The second connector reads your calendar straight from Microsoft Graph, with no MCP in
+between. That was a deliberate choice: it makes the connector abstraction carry its weight,
+since the two sources share nothing but the `Connector` interface and the signal shape.
+
+It needs an application (client) ID from an app registration in Entra ID, registered as a
+public client with the redirect URI `http://localhost`. Paste it in settings and press
+Connect. Wisp asks for `Calendars.Read offline_access`, stores the tokens the same way as
+ClickUp, and never writes.
+
+Meetings come from `calendarView` rather than the events list, because the server expands a
+recurring series into real instances. That is what keeps a weekly meeting correct across a
+daylight saving change instead of drifting by an hour. Cancelled events are dropped, and
+declined ones are kept but never interrupt.
+
+Two things follow from a meeting. A warning a few minutes before it starts, and silence while
+it runs: an accepted, busy, not all day meeting becomes a `SilenceWindow` from a minute before
+the start to the end. Urgent still passes, so a task due right now reaches you anyway.
 
 ## Nudges
 
@@ -118,9 +138,9 @@ of what was already shown, the active silence windows and the budget.
 | due-today | later today, outside the warning window          | low     | once per day                                         |
 
 Silence is one abstraction, `SilenceWindow[]`, fed by several sources: quiet hours from
-settings, GNOME Do Not Disturb read from gsettings, a snooze from the menu, and a fullscreen
-X11 window in focus. Quiet hours and fullscreen let an urgent nudge through, the other two do
-not. Meetings become a fifth source in Phase 5.
+settings, GNOME Do Not Disturb read from gsettings, a snooze from the menu, a fullscreen X11
+window in focus, and an accepted meeting. Quiet hours, fullscreen and meetings let an urgent
+nudge through, the other two do not.
 
 The budget is a hard ceiling, three per hour and twelve per day by default, urgent included.
 Excess is dropped rather than queued and comes back on the next decision if it still matters.
@@ -216,6 +236,8 @@ src/main/index.ts            entry, loop, IPC, harness wiring
 src/main/brain/              pure: movement, follow, actor, silence, nudges, mood, celebration
 src/main/stage/              the only place that calls setBounds, setShape, setAlwaysOnTop
 src/main/mcp/                MCP client host, OAuth PKCE loopback provider, encrypted secrets
+src/main/connectors/         the Connector interface, the ClickUp and Outlook connectors, the hub
+src/main/graph/              Microsoft Graph auth, client and calendar adapter
 src/main/signals/            SQLite cache with diff, scheduler with backoff, ClickUp adapter
 src/main/speech/             prompt, sanitizer, provider adapters, Ollama detection
 src/main/voice/              the interface the app sees, and its lazy implementation

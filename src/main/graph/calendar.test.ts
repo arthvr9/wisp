@@ -59,7 +59,8 @@ describe('fetchCalendarSignals', () => {
     expect(call?.query).toEqual({
       startDateTime: new Date(now - 2 * 3_600_000).toISOString(),
       endDateTime: new Date(now + 24 * 3_600_000).toISOString(),
-      $select: 'id,subject,start,end,isAllDay,isCancelled,showAs,responseStatus,organizer,webLink,seriesMasterId',
+      $select:
+        'id,subject,start,end,isAllDay,isCancelled,showAs,responseStatus,organizer,webLink,seriesMasterId',
       $orderby: 'start/dateTime',
       $top: '100',
     });
@@ -140,7 +141,9 @@ describe('fetchCalendarSignals', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const signals = await fetchCalendarSignals(client, { nowMs: now, horizonHours: 24 });
     expect(signals.map((s) => s.id)).toEqual(['outlook:a', 'outlook:b']);
-    expect(warn).toHaveBeenCalledWith('outlook: skipped 1 calendar events that did not match the schema');
+    expect(warn).toHaveBeenCalledWith(
+      'outlook: skipped 1 calendar events that did not match the schema',
+    );
     warn.mockRestore();
   });
 
