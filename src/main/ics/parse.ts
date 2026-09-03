@@ -88,6 +88,35 @@ function unescapeText(value: string): string {
 // after a daylight saving change. Intl.DateTimeFormat knows the real transition dates for a
 // zone, so it is used to find the offset in effect, with one correction pass in case the
 // first guess landed on the wrong side of a transition.
+// Outlook still exports Windows zone names in TZID. Intl only knows IANA names and throws on
+// anything else, which used to make the whole event disappear. The common ones are mapped and
+// the rest fall back to the machine's own zone, which is right far more often than dropping
+// the event would be.
+const WINDOWS_ZONES: Record<string, string> = {
+  'e. south america standard time': 'America/Sao_Paulo',
+  'sa eastern standard time': 'America/Fortaleza',
+  'eastern standard time': 'America/New_York',
+  'central standard time': 'America/Chicago',
+  'mountain standard time': 'America/Denver',
+  'pacific standard time': 'America/Los_Angeles',
+  'gmt standard time': 'Europe/London',
+  'w. europe standard time': 'Europe/Berlin',
+  'romance standard time': 'Europe/Paris',
+  'central european standard time': 'Europe/Warsaw',
+  utc: 'UTC',
+};
+
+function resolveZone(timeZone: string): string | undefined {
+  const mapped = WINDOWS_ZONES[timeZone.trim().toLowerCase()];
+  const candidate = mapped ?? timeZone;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: candidate });
+    return candidate;
+  } catch {
+    return undefined;
+  }
+}
+
 function zoneOffsetMs(atMs: number, timeZone: string): number {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone,
@@ -148,8 +177,9 @@ function parseIcsDateTime(value: string, params: Record<string, string>): Parsed
     return { ms: Date.UTC(year, month, day, hour, minute, second), allDay: false };
   }
   const tzid = params.TZID;
-  if (tzid !== undefined) {
-    return { ms: zonedTimeToUtc(year, month, day, hour, minute, second, tzid), allDay: false };
+  const zone = tzid === undefined ? undefined : resolveZone(tzid);
+  if (zone !== undefined) {
+    return { ms: zonedTimeToUtc(year, month, day, hour, minute, second, zone), allDay: false };
   }
   // No zone information at all means a "floating" time: whatever zone the viewer is in. Wisp
   // always views its own owner's calendar on the owner's own machine, so the machine's local

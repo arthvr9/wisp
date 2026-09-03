@@ -320,3 +320,36 @@ describe('parseIcs', () => {
     expect(events.map((e) => e.uid)).toEqual(['s1@example.com', 's2@example.com']);
   });
 });
+
+describe('a Windows timezone name in TZID', () => {
+  it('maps the common ones instead of dropping the event', () => {
+    const text = [
+      'BEGIN:VCALENDAR',
+      'BEGIN:VEVENT',
+      'UID:win-1',
+      'SUMMARY:Standup',
+      'DTSTART;TZID=E. South America Standard Time:20260902T090000',
+      'DTEND;TZID=E. South America Standard Time:20260902T093000',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n');
+    const [event] = parseIcs(text);
+    expect(event).toBeDefined();
+    expect(new Date(event?.startMs ?? 0).toISOString()).toBe('2026-09-02T12:00:00.000Z');
+  });
+
+  it('keeps an event whose zone is unknown, reading it as local time', () => {
+    const text = [
+      'BEGIN:VCALENDAR',
+      'BEGIN:VEVENT',
+      'UID:win-2',
+      'SUMMARY:Mystery',
+      'DTSTART;TZID=Middle-earth Standard Time:20260902T090000',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n');
+    const [event] = parseIcs(text);
+    expect(event).toBeDefined();
+    expect(new Date(event?.startMs ?? 0).getHours()).toBe(9);
+  });
+});

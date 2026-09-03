@@ -218,3 +218,29 @@ function formatUntil(date: Date): string {
     `T${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`
   );
 }
+
+describe('a monthly rule anchored on a day some months lack', () => {
+  it('skips those months instead of rolling into the next one', () => {
+    const master: IcsEvent = {
+      uid: 'monthly-31',
+      summary: 'End of month',
+      startMs: new Date(2026, 0, 31, 9, 0, 0).getTime(),
+      endMs: new Date(2026, 0, 31, 10, 0, 0).getTime(),
+      allDay: false,
+      cancelled: false,
+      transparent: false,
+      organizer: '',
+      exceptions: [],
+      recurrenceRule: 'FREQ=MONTHLY',
+    };
+    const out = expandRecurrences([master], {
+      fromMs: new Date(2026, 0, 1).getTime(),
+      toMs: new Date(2026, 5, 1).getTime(),
+    });
+    const days = out.map((e) => {
+      const d = new Date(e.startMs);
+      return `${d.getMonth() + 1}-${d.getDate()}`;
+    });
+    expect(days).toEqual(['1-31', '3-31', '5-31']);
+  });
+});

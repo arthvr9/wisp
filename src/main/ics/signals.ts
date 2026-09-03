@@ -29,6 +29,10 @@ function toSignal(event: IcsEvent): Signal {
   };
 }
 
+// One day of calendar cannot reasonably hold more than this, and a runaway feed must not
+// reach the store or travel over IPC.
+const MAX_SIGNALS = 500;
+
 export function icsSignals(
   events: readonly IcsEvent[],
   opts: { nowMs: number; pastHours?: number; horizonHours: number },
@@ -43,5 +47,5 @@ export function icsSignals(
     if (event.startMs >= windowEnd || event.endMs <= windowStart) continue;
     signals.push(toSignal(event));
   }
-  return signals;
+  return signals.slice(0, MAX_SIGNALS);
 }

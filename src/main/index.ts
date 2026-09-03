@@ -8,7 +8,7 @@ import {
   screen,
   shell,
 } from 'electron';
-import type { Display, Point } from 'electron';
+import type { Display, Point, WebContents } from 'electron';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -67,6 +67,10 @@ const BUBBLE_MS = 12_000;
 
 function toArea(d: Display): DisplayArea {
   return { id: d.id, ...d.workArea };
+}
+
+function withoutSecrets(c: Config): Config {
+  return { ...c, calendar: { ...c.calendar, icsUrl: c.calendar.icsUrl === '' ? '' : '(set)' } };
 }
 
 function isAction(value: unknown): value is SignalAction {
@@ -393,16 +397,24 @@ void app.whenReady().then(async () => {
   config.onChange((c) => {
     applyConfig(c);
     voice.configure(c.speech);
-    for (const w of [stage.win, ...openSettingsWindows()]) {
-      w.webContents.send(IPC.configChanged, c);
-    }
+    stage.win.webContents.send(IPC.configChanged, withoutSecrets(c));
+    panel.win.webContents.send(IPC.configChanged, withoutSecrets(c));
+    for (const w of openSettingsWindows()) w.webContents.send(IPC.configChanged, c);
   });
+
+  // Only the settings window edits the calendar link, and anyone holding it can read the
+  // calendar, so it never travels to the mascot or the panel.
+  function isSettings(contents: WebContents): boolean {
+    return openSettingsWindows().some((w) => w.webContents === contents);
+  }
 
   function openSettingsWindows() {
     return BrowserWindow.getAllWindows().filter((w) => w !== stage.win);
   }
 
-  ipcMain.handle(IPC.configGet, () => config.get());
+  ipcMain.handle(IPC.configGet, (event) =>
+    isSettings(event.sender) ? config.get() : withoutSecrets(config.get()),
+  );
   ipcMain.handle(IPC.configSet, (_event, patch: Partial<Config>) => config.set(patch));
   ipcMain.handle(IPC.environmentGet, (): EnvironmentInfo => ({
     trayAvailable: tray !== undefined,

@@ -94,6 +94,10 @@ function parseRule(raw: string): ParsedRule | undefined {
   return { freq, interval, count, untilMs, byday };
 }
 
+function daysInMonth(year: number, month: number): number {
+  return new Date(year, month + 1, 0).getDate();
+}
+
 function* occurrenceDates(
   startMs: number,
   freq: Freq,
@@ -113,8 +117,15 @@ function* occurrenceDates(
       yield new Date(year, month, day + i * interval, hour, minute, second).getTime();
     }
   } else if (freq === 'MONTHLY') {
+    // A day that does not exist in the target month is skipped, which is what RFC 5545 says.
+    // Letting Date roll over would turn the 31st into the 3rd of the month after.
     for (let i = 0; ; i += 1) {
-      yield new Date(year, month + i * interval, day, hour, minute, second).getTime();
+      const target = new Date(year, month + i * interval, 1);
+      if (day > daysInMonth(target.getFullYear(), target.getMonth())) {
+        yield Number.NaN;
+        continue;
+      }
+      yield new Date(target.getFullYear(), target.getMonth(), day, hour, minute, second).getTime();
     }
   } else {
     const codes = byday !== undefined && byday.length > 0 ? byday : [base.getDay()];
@@ -148,7 +159,15 @@ function boundedOccurrences(
 ): number[] {
   const results: number[] = [];
   let generated = 0;
+  let skipped = 0;
   for (const occStart of gen) {
+    // A month without that day yields NaN and counts against neither COUNT nor the cap, but a
+    // long run of them still has to end so the generator cannot spin forever.
+    if (Number.isNaN(occStart)) {
+      skipped += 1;
+      if (skipped > opts.maxPerRule) break;
+      continue;
+    }
     if (opts.count !== undefined && generated >= opts.count) break;
     if (opts.untilMs !== undefined && occStart > opts.untilMs) break;
     if (occStart > opts.toMs) break;

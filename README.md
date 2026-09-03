@@ -161,7 +161,7 @@ Completing from the panel marks the item closed straight away, so the list updat
 waiting for the next sync, and the mascot celebrates exactly as it would have if you had
 finished the task in the source app.
 
-Only ClickUp can be written to today. Outlook is read only by design, and the Gruply task
+Only ClickUp can be written to today. The calendar is read only by design, and the Gruply task
 update endpoint is documented but its body shape is not, so that connector reads only until it
 is confirmed.
 
@@ -286,7 +286,7 @@ src/main/index.ts            entry, loop, IPC, harness wiring
 src/main/brain/              pure: movement, follow, actor, silence, nudges, mood, celebration
 src/main/stage/              the only place that calls setBounds, setShape, setAlwaysOnTop
 src/main/mcp/                MCP client host, OAuth PKCE loopback provider, encrypted secrets
-src/main/connectors/         the Connector interface, the ClickUp and Outlook connectors, the hub
+src/main/connectors/         the Connector interface, the three connectors, the hub
 src/main/ics/                ICS fetch, parser, recurrence expansion and mapping
 src/main/gruply/             Gruply Teams client and task adapter
 src/main/signals/            SQLite cache with diff, scheduler with backoff, ClickUp adapter
@@ -301,17 +301,17 @@ scripts/                     placeholder sprite generator, README image generato
 
 ## Roadmap
 
-| Phase | What                                                                       | State   |
-| ----- | -------------------------------------------------------------------------- | ------- |
-| 0     | Spike: prove the window mechanics and measure the cost                     | Done    |
-| 1     | Life: the creature walks, sleeps, follows, and can be dismissed            | Done    |
-| 2     | Signal: the first real data, ClickUp tasks over MCP                        | Done    |
-| 3     | Judgement: rules, silence windows, a budget                                | Done    |
-| 4     | Soul: mood, celebration, an optional voice                                 | Done    |
-| 5     | Proof: a second connector, Outlook calendar, to test the abstraction       | Next    |
-| 6     | Action: click the mascot and act on the day                                | Planned |
-| 7     | Showcase: package, document, publish                                       | Planned |
-| 8     | If it is worth it: a native GNOME extension instead of the XWayland window | Maybe   |
+| Phase | What                                                                       | State |
+| ----- | -------------------------------------------------------------------------- | ----- |
+| 0     | Spike: prove the window mechanics and measure the cost                     | Done  |
+| 1     | Life: the creature walks, sleeps, follows, and can be dismissed            | Done  |
+| 2     | Signal: the first real data, ClickUp tasks over MCP                        | Done  |
+| 3     | Judgement: rules, silence windows, a budget                                | Done  |
+| 4     | Soul: mood, celebration, an optional voice                                 | Done  |
+| 5     | Proof: a second connector, the calendar, to test the abstraction           | Done  |
+| 6     | Action: click the mascot and act on the day                                | Done  |
+| 7     | Showcase: package, document, publish                                       | Next  |
+| 8     | If it is worth it: a native GNOME extension instead of the XWayland window | Maybe |
 
 ## License
 

@@ -1,3 +1,4 @@
+const MAX_BYTES = 8 * 1024 * 1024;
 const TIMEOUT_MS = 15_000;
 
 function parseHttpUrl(url: string): URL | undefined {
@@ -25,7 +26,14 @@ export async function fetchIcsText(url: string, fetchFn: typeof fetch = fetch): 
     throw new Error(`the calendar link was rejected with status ${res.status}`);
   }
 
+  const length = Number(res.headers.get('content-length') ?? '0');
+  if (length > MAX_BYTES) throw new Error('the calendar is larger than this app will read');
   const text = await res.text();
+  // A published calendar with years of history can be tens of megabytes, and none of it past
+  // the window is useful. The header is a hint only, so the body is checked as well.
+  if (text.length > MAX_BYTES) {
+    throw new Error('the calendar is larger than this app will read');
+  }
   if (!text.trim().startsWith('BEGIN:VCALENDAR')) {
     throw new Error('the calendar link did not return an ICS calendar');
   }
