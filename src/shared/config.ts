@@ -3,6 +3,13 @@ import type { SpeechConfig } from './speech';
 
 export type Locale = 'en';
 
+export interface OutlookConfig {
+  clientId: string;
+  tenant: string;
+  warnMinutes: number;
+  silenceDuringMeetings: boolean;
+}
+
 export interface Config {
   name: string;
   locale: Locale;
@@ -13,6 +20,7 @@ export interface Config {
   quietHours: QuietHours;
   budget: NudgeBudget;
   speech: SpeechConfig;
+  outlook: OutlookConfig;
 }
 
 export const defaultConfig: Config = {
@@ -25,6 +33,7 @@ export const defaultConfig: Config = {
   quietHours: { enabled: true, start: '19:00', end: '08:00' },
   budget: { maxPerHour: 3, maxPerDay: 12 },
   speech: { provider: 'off', baseUrl: '', model: '' },
+  outlook: { clientId: '', tenant: 'common', warnMinutes: 5, silenceDuringMeetings: true },
 };
 
 const PROVIDERS = ['off', 'ollama', 'openai-compatible', 'anthropic'] as const;
@@ -59,6 +68,22 @@ export function normalizeConfig(raw: unknown): Config {
         : c.speech.provider,
       baseUrl: typeof sp.baseUrl === 'string' ? sp.baseUrl.trim().slice(0, 200) : c.speech.baseUrl,
       model: typeof sp.model === 'string' ? sp.model.trim().slice(0, 100) : c.speech.model,
+    };
+  }
+  if (typeof r.outlook === 'object' && r.outlook !== null) {
+    const o = r.outlook as Record<string, unknown>;
+    c.outlook = {
+      clientId:
+        typeof o.clientId === 'string' ? o.clientId.trim().slice(0, 100) : c.outlook.clientId,
+      tenant:
+        typeof o.tenant === 'string' && o.tenant.trim().length > 0
+          ? o.tenant.trim().slice(0, 100)
+          : c.outlook.tenant,
+      warnMinutes: intIn(o.warnMinutes, 0, 120) ?? c.outlook.warnMinutes,
+      silenceDuringMeetings:
+        typeof o.silenceDuringMeetings === 'boolean'
+          ? o.silenceDuringMeetings
+          : c.outlook.silenceDuringMeetings,
     };
   }
   if (typeof r.budget === 'object' && r.budget !== null) {

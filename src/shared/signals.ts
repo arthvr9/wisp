@@ -1,18 +1,30 @@
 import type { SilenceSource } from './nudges';
 
-export type SignalSource = 'clickup';
-export type SignalKind = 'task-due';
+export type SignalSource = 'clickup' | 'outlook';
+export const SIGNAL_SOURCES: readonly SignalSource[] = ['clickup', 'outlook'];
+export type SignalKind = 'task-due' | 'meeting';
+
+export interface Meeting {
+  endsAt: number;
+  accepted: boolean;
+  allDay: boolean;
+  organizer: string;
+  busy: boolean;
+}
 
 export interface Signal {
   id: string;
   source: SignalSource;
   kind: SignalKind;
-  title: string;
+  /** Due date for a task, start time for a meeting. */
   dueAt: number;
+  title: string;
   url: string;
   status: string;
+  /** List for a task, calendar for a meeting. */
   listName: string;
   closedAt?: number;
+  meeting?: Meeting;
 }
 
 export type ConnectionState =
@@ -27,7 +39,7 @@ export interface SilenceStatus {
 }
 
 export interface SignalsStatus {
-  clickup: ConnectionState;
+  connectors: Record<SignalSource, ConnectionState>;
   nextSyncAt?: number;
   silence: SilenceStatus;
   secretsEncrypted: boolean;

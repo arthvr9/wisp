@@ -1,7 +1,7 @@
 import type { PoseUpdate } from './actor';
 import type { Config } from './config';
 import type { Mood } from './mood';
-import type { Signal, SignalsStatus } from './signals';
+import type { Signal, SignalSource, SignalsStatus } from './signals';
 import type { SpeechStatus } from './speech';
 
 export const IPC = {
@@ -14,9 +14,9 @@ export const IPC = {
   configChanged: 'wisp:config-changed',
   environmentGet: 'wisp:environment-get',
   bubble: 'wisp:bubble',
-  clickupConnect: 'wisp:clickup-connect',
-  clickupDisconnect: 'wisp:clickup-disconnect',
-  clickupSyncNow: 'wisp:clickup-sync-now',
+  connectorConnect: 'wisp:connector-connect',
+  connectorDisconnect: 'wisp:connector-disconnect',
+  syncNow: 'wisp:sync-now',
   signalsStatusGet: 'wisp:signals-status-get',
   signalsStatusChanged: 'wisp:signals-status-changed',
   signalsList: 'wisp:signals-list',
@@ -55,9 +55,9 @@ export interface WispApi {
   onConfigChanged(listener: (config: Config) => void): () => void;
   getEnvironment(): Promise<EnvironmentInfo>;
   onBubble(listener: (message: BubbleMessage | null) => void): () => void;
-  clickupConnect(): Promise<SignalsStatus>;
-  clickupDisconnect(): Promise<SignalsStatus>;
-  clickupSyncNow(): Promise<SignalsStatus>;
+  connect(source: SignalSource): Promise<SignalsStatus>;
+  disconnect(source: SignalSource): Promise<SignalsStatus>;
+  syncNow(): Promise<SignalsStatus>;
   getSignalsStatus(): Promise<SignalsStatus>;
   onSignalsStatusChanged(listener: (status: SignalsStatus) => void): () => void;
   listSignals(): Promise<Signal[]>;

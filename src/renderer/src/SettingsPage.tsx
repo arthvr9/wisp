@@ -5,9 +5,10 @@ import iconUrl from '../../../resources/icons/wisp-256.png';
 import type { Config } from '../../shared/config';
 import { translator } from '../../shared/i18n';
 import type { Translate } from '../../shared/i18n';
+import type { MessageKey } from '../../shared/i18n/en';
 import type { EnvironmentInfo } from '../../shared/ipc';
 import type { Mood } from '../../shared/mood';
-import type { SignalsStatus } from '../../shared/signals';
+import type { SignalSource, SignalsStatus } from '../../shared/signals';
 import type { SpeechConfig, SpeechProviderKind, SpeechStatus } from '../../shared/speech';
 
 const SAVED_VISIBLE_MS = 1500;
@@ -43,6 +44,8 @@ function VoiceSection({ t, speech, status, onSave, onStatus }: VoiceSectionProps
   const [keyDraft, setKeyDraft] = useState('');
   const [result, setResult] = useState<SpeechTestResult | null>(null);
   const [busy, setBusy] = useState(false);
+  const [clientIdDraft, setClientIdDraft] = useState<string | null>(null);
+  const [tenantDraft, setTenantDraft] = useState<string | null>(null);
 
   const provider = speech.provider;
   const isCloud = provider === 'openai-compatible' || provider === 'anthropic';
@@ -243,6 +246,8 @@ export function SettingsPage() {
   const [speech, setSpeech] = useState<SpeechStatus | null>(null);
   const [mood, setMood] = useState<Mood | null>(null);
   const [busy, setBusy] = useState(false);
+  const [clientIdDraft, setClientIdDraft] = useState<string | null>(null);
+  const [tenantDraft, setTenantDraft] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -325,15 +330,15 @@ export function SettingsPage() {
     };
   }
 
-  function clickup(action: 'connect' | 'disconnect' | 'sync') {
+  function connector(source: SignalSource, action: 'connect' | 'disconnect' | 'sync') {
     return () => {
       setBusy(true);
       const call =
         action === 'connect'
-          ? window.wisp.clickupConnect()
+          ? window.wisp.connect(source)
           : action === 'disconnect'
-            ? window.wisp.clickupDisconnect()
-            : window.wisp.clickupSyncNow();
+            ? window.wisp.disconnect(source)
+            : window.wisp.syncNow();
       void call.then(setSignals).finally(() => {
         setBusy(false);
       });
@@ -346,8 +351,12 @@ export function SettingsPage() {
   const clock = (ms: number) =>
     new Date(ms).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 
-  function clickupStatusLine(status: SignalsStatus): string {
-    const c = status.clickup;
+  function statusLine(
+    status: SignalsStatus,
+    source: SignalSource,
+    connectedKey: MessageKey,
+  ): string {
+    const c = status.connectors[source];
     switch (c.state) {
       case 'disconnected':
         return t('settings.clickup.disconnected');
@@ -355,12 +364,40 @@ export function SettingsPage() {
         return t('settings.clickup.authorizing');
       case 'connected':
         return (
-          t('settings.clickup.connected', { count: c.signalCount }) +
+          t(connectedKey, { count: c.signalCount }) +
           (c.lastSyncAt ? ' ' + t('settings.clickup.lastSync', { time: clock(c.lastSyncAt) }) : '')
         );
       case 'error':
         return t('settings.clickup.error', { message: c.message });
     }
+  }
+
+  function actions(source: SignalSource, connectable: boolean) {
+    const state = signals?.connectors[source].state;
+    if (state === 'connected' || state === 'error') {
+      return (
+        <div className="actions">
+          <button type="button" disabled={busy} onClick={connector(source, 'sync')}>
+            {t('settings.clickup.syncNow')}
+          </button>
+          <button type="button" disabled={busy} onClick={connector(source, 'disconnect')}>
+            {t('settings.clickup.disconnect')}
+          </button>
+        </div>
+      );
+    }
+    return (
+      <div className="actions">
+        <button
+          type="button"
+          className="primary"
+          disabled={busy || !connectable || state === 'authorizing'}
+          onClick={connector(source, 'connect')}
+        >
+          {t('settings.clickup.connect')}
+        </button>
+      </div>
+    );
   }
 
   return (
@@ -434,9 +471,9 @@ export function SettingsPage() {
           <span className="label">{t('settings.clickup')}</span>
           <p className="hint">{t('settings.clickup.hint')}</p>
           {signals && (
-            <p className={signals.clickup.state === 'error' ? 'hint notice' : 'hint'}>
-              {clickupStatusLine(signals)}
-              {signals.nextSyncAt && signals.clickup.state === 'connected'
+            <p className={signals.connectors.clickup.state === 'error' ? 'hint notice' : 'hint'}>
+              {statusLine(signals, 'clickup', 'settings.clickup.connected')}
+              {signals.nextSyncAt && signals.connectors.clickup.state === 'connected'
                 ? ' ' + t('settings.clickup.nextSync', { time: clock(signals.nextSyncAt) })
                 : ''}
             </p>
@@ -444,27 +481,7 @@ export function SettingsPage() {
           {signals && !signals.secretsEncrypted && (
             <p className="hint notice">{t('settings.clickup.secrets')}</p>
           )}
-          <div className="actions">
-            {signals?.clickup.state === 'connected' || signals?.clickup.state === 'error' ? (
-              <>
-                <button type="button" disabled={busy} onClick={clickup('sync')}>
-                  {t('settings.clickup.syncNow')}
-                </button>
-                <button type="button" disabled={busy} onClick={clickup('disconnect')}>
-                  {t('settings.clickup.disconnect')}
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                className="primary"
-                disabled={busy || signals?.clickup.state === 'authorizing'}
-                onClick={clickup('connect')}
-              >
-                {t('settings.clickup.connect')}
-              </button>
-            )}
-          </div>
+          {actions('clickup', true)}
           <label className="inline" htmlFor="dueSoon">
             {t('settings.clickup.dueSoon')}
           </label>
@@ -492,6 +509,90 @@ export function SettingsPage() {
           }}
           onStatus={setSpeech}
         />
+
+        <section className="field">
+          <span className="label">{t('settings.outlook')}</span>
+          <p className="hint">{t('settings.outlook.hint')}</p>
+          {signals && (
+            <p className={signals.connectors.outlook.state === 'error' ? 'hint notice' : 'hint'}>
+              {statusLine(signals, 'outlook', 'settings.outlook.connected')}
+            </p>
+          )}
+          <label className="inline" htmlFor="outlookClientId">
+            {t('settings.outlook.clientId')}
+          </label>
+          <input
+            id="outlookClientId"
+            type="text"
+            value={clientIdDraft ?? config.outlook.clientId}
+            spellCheck={false}
+            autoComplete="off"
+            onChange={(e) => {
+              setClientIdDraft(e.target.value);
+            }}
+            onBlur={() => {
+              if (clientIdDraft !== null) {
+                save({ outlook: { ...config.outlook, clientId: clientIdDraft.trim() } });
+                setClientIdDraft(null);
+              }
+            }}
+          />
+          <p className="hint">{t('settings.outlook.clientId.hint')}</p>
+          <label className="inline" htmlFor="outlookTenant">
+            {t('settings.outlook.tenant')}
+          </label>
+          <input
+            id="outlookTenant"
+            type="text"
+            value={tenantDraft ?? config.outlook.tenant}
+            spellCheck={false}
+            autoComplete="off"
+            onChange={(e) => {
+              setTenantDraft(e.target.value);
+            }}
+            onBlur={() => {
+              if (tenantDraft !== null) {
+                const tenant = tenantDraft.trim();
+                save({
+                  outlook: { ...config.outlook, tenant: tenant.length > 0 ? tenant : 'common' },
+                });
+                setTenantDraft(null);
+              }
+            }}
+          />
+          <p className="hint">{t('settings.outlook.tenant.hint')}</p>
+          {config.outlook.clientId.length === 0 && (
+            <p className="hint notice">{t('settings.outlook.needsClientId')}</p>
+          )}
+          {actions('outlook', config.outlook.clientId.length > 0)}
+          <label className="inline" htmlFor="meetingWarn">
+            {t('settings.outlook.warn')}
+          </label>
+          <input
+            id="meetingWarn"
+            type="number"
+            min={0}
+            max={120}
+            value={config.outlook.warnMinutes}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              if (Number.isFinite(n) && n >= 0 && n <= 120) {
+                save({ outlook: { ...config.outlook, warnMinutes: n } });
+              }
+            }}
+          />
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={config.outlook.silenceDuringMeetings}
+              onChange={(e) => {
+                save({ outlook: { ...config.outlook, silenceDuringMeetings: e.target.checked } });
+              }}
+            />
+            <span>{t('settings.outlook.silence')}</span>
+          </label>
+          <p className="hint">{t('settings.outlook.silence.hint')}</p>
+        </section>
 
         <section className="field">
           <span className="label">{t('settings.nudges')}</span>

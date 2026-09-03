@@ -6,7 +6,7 @@ import type {
   SilenceWindow,
   Urgency,
 } from '../../shared/nudges';
-import type { Signal } from '../../shared/signals';
+import type { Signal, SignalKind } from '../../shared/signals';
 import { DAY_MS, MINUTE_MS, activeSilence, localDayStart } from './silence';
 
 export interface NudgeInput {
@@ -16,6 +16,7 @@ export interface NudgeInput {
   silence: SilenceWindow[];
   budget: NudgeBudget;
   dueSoonMs: number;
+  meetingWarnMs: number;
   tzOffsetMinutes?: number;
 }
 
@@ -30,12 +31,14 @@ export interface RuleContext {
   nowMs: number;
   dueAt: number;
   dueSoonMs: number;
+  meetingWarnMs: number;
   dayStart: number;
   dayEnd: number;
 }
 
 export interface NudgeRule {
   kind: NudgeKind;
+  signalKind: SignalKind;
   urgency: Urgency;
   matches: (ctx: RuleContext) => boolean;
   allow: (ctx: RuleContext, previous: NudgeRecord[]) => boolean;
@@ -61,27 +64,45 @@ function overdueAllowed(ctx: RuleContext, previous: NudgeRecord[]): boolean {
 export const RULES: readonly NudgeRule[] = [
   {
     kind: 'due-now',
+    signalKind: 'task-due',
     urgency: 'urgent',
     matches: ({ delta }) => delta > -DUE_NOW_WINDOW_MS && delta <= 0,
     allow: once,
   },
   {
     kind: 'due-soon',
+    signalKind: 'task-due',
     urgency: 'normal',
     matches: ({ delta, dueSoonMs }) => delta > 0 && delta <= dueSoonMs,
     allow: once,
   },
   {
     kind: 'overdue',
+    signalKind: 'task-due',
     urgency: 'normal',
     matches: ({ delta }) => delta <= -DUE_NOW_WINDOW_MS && delta > -STALE_OVERDUE_MS,
     allow: overdueAllowed,
   },
   {
     kind: 'due-today',
+    signalKind: 'task-due',
     urgency: 'low',
     matches: ({ delta, dueSoonMs, dueAt, dayEnd }) => delta > dueSoonMs && dueAt < dayEnd,
     allow: (ctx, previous) => !previous.some((r) => r.at >= ctx.dayStart),
+  },
+  {
+    kind: 'meeting-now',
+    signalKind: 'meeting',
+    urgency: 'urgent',
+    matches: ({ delta }) => delta > -DUE_NOW_WINDOW_MS && delta <= 0,
+    allow: once,
+  },
+  {
+    kind: 'meeting-soon',
+    signalKind: 'meeting',
+    urgency: 'normal',
+    matches: ({ delta, meetingWarnMs }) => delta > 0 && delta <= meetingWarnMs,
+    allow: once,
   },
 ];
 
@@ -91,16 +112,25 @@ function byPriority(a: Nudge, b: Nudge): number {
   return URGENCY_RANK[a.urgency] - URGENCY_RANK[b.urgency] || a.dueAt - b.dueAt;
 }
 
+function meetingSkipped(signal: Signal): boolean {
+  if (signal.kind !== 'meeting') return false;
+  const meeting = signal.meeting;
+  return meeting === undefined || meeting.allDay || !meeting.accepted;
+}
+
 function wanted(signal: Signal, input: NudgeInput, dayStart: number): Nudge | undefined {
+  if (meetingSkipped(signal)) return undefined;
+
   const ctx: RuleContext = {
     delta: signal.dueAt - input.nowMs,
     nowMs: input.nowMs,
     dueAt: signal.dueAt,
     dueSoonMs: input.dueSoonMs,
+    meetingWarnMs: input.meetingWarnMs,
     dayStart,
     dayEnd: dayStart + DAY_MS,
   };
-  const rule = RULES.find((r) => r.matches(ctx));
+  const rule = RULES.find((r) => r.signalKind === signal.kind && r.matches(ctx));
   if (rule === undefined) return undefined;
 
   const previous = input.history
