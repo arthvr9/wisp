@@ -1,18 +1,40 @@
-# Wisp
+<p align="center">
+  <img src="docs/images/wisp.png" width="120" alt="The Wisp mascot, a small purple creature with a flame on its head">
+</p>
 
-A desktop mascot for GNOME on Wayland, in the spirit of Shimeji. Later phases will read tasks
-and meetings through MCP and nudge you about them. This repository is at Phase 0: a spike
-that proves the window mechanics work on the target environment and measures what they cost.
-Nothing here is the app yet, except `src/main/brain/movement.ts`, which is written to last.
+<h1 align="center">Wisp</h1>
 
-## Target
+<p align="center">
+  A desktop mascot for GNOME on Wayland. It walks around your screen, reads your tasks
+  over MCP, and speaks up when one is about to be due.
+</p>
 
-Linux, GNOME, Wayland session. Ubuntu and Debian 13.
+<p align="center">
+  <img src="docs/images/poses.png" width="640" alt="Idle, walking, sitting, sleeping, alert, held and celebrating">
+</p>
+
+<p align="center">
+  <img src="docs/images/mascots.png" width="520" alt="The five mascots: a wisp, a coffee cup, a cat, a ghost and a potted plant">
+</p>
+
+Phase 4 of 8. It runs from source on Ubuntu and Debian 13. There is no package yet, and the
+art is a placeholder until the real Aseprite sheet lands.
+
+| The bubble                                                                                                  | Settings                                                                   |
+| ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| <img src="docs/images/bubble.png" width="240" alt="A speech bubble above the mascot reading Due in 30 min"> | <img src="docs/images/settings.png" width="300" alt="The settings window"> |
+
+## Why it is built this way
 
 Under Wayland a client cannot position its own window or keep it above others. Electron
 therefore runs with the X11 Ozone backend and lives inside XWayland, where both still work.
 The window is the character: a 96 by 96 pixel frameless, transparent, non-focusable window
-that walks across the screen with `setBounds`.
+that walks across the screen with `setBounds`. There is no fullscreen click-through overlay,
+because `setIgnoreMouseEvents` with `forward` does not exist on Linux.
+
+`focusable: false` makes Chromium create an override-redirect X window. Mutter does not
+manage it, so it stays above every managed window and never takes keyboard focus. That is
+exactly the behaviour a mascot needs.
 
 ## Running
 
@@ -20,63 +42,235 @@ Requires Node 22 or newer.
 
 ```
 npm install
-npm run dev          # electron-vite with hot reload
-npm run test         # vitest, covers the movement module
+npm run dev            # electron-vite with hot reload
+npm run start          # build and run
+npm run test           # vitest: movement, follow, actor, nudges, mood, speech, sprites
 npm run typecheck
 npm run lint
-npm run harness      # builds, then runs the 10 minute measurement and prints a summary
-npm run harness:short  # same, 1 minute, with a scripted drag self-test
+npm run sprites        # regenerate the placeholder sheet, icons and README images
+npm run harness        # build, run the 10 minute measurement, print a summary
+npm run harness:short  # same, 1 minute, with a scripted self-test
 ```
 
-Two flags are passed on the command line by every script and both are required:
+Two flags are passed on the command line by every script and both are required.
 
 - `--ozone-platform=x11`. Electron picks the Ozone platform before the main script runs, so
-  `app.commandLine.appendSwitch` alone is too late. Without the flag the browser process
-  stays on Wayland while the GPU and renderer children switch to X11, the GPU process
-  crashes in a loop and no window appears.
-- `--no-sandbox`. Ubuntu 24.04 and newer block unprivileged user namespaces through
-  AppArmor, and the setuid `chrome-sandbox` inside `node_modules` is not root-owned, so an
-  unpackaged Electron aborts on start. A packaged build ships a proper helper and will not
-  need this. If you prefer the sandbox during development:
+  `app.commandLine.appendSwitch` alone is too late. Without the flag the browser process stays
+  on Wayland while the GPU and renderer children switch to X11, the GPU process crashes in a
+  loop and no window appears.
+- `--no-sandbox`. Ubuntu 24.04 and newer block unprivileged user namespaces through AppArmor,
+  and the setuid `chrome-sandbox` inside `node_modules` is not root owned, so an unpackaged
+  Electron aborts on start. A packaged build ships a proper helper and will not need this. To
+  keep the sandbox during development:
   `sudo chown root node_modules/electron/dist/chrome-sandbox && sudo chmod 4755 node_modules/electron/dist/chrome-sandbox`.
+
+## Using it
+
+- Left button drags the mascot. Drop it and it falls to the bottom of the work area.
+- Right button opens the menu: Pause, Hide, Poke, Snooze for an hour, Settings, Quit. This is
+  the kill switch that always works.
+- `Control+Alt+W` pauses and resumes, two quick presses hide. Registering succeeds on X11, but
+  a Wayland compositor may never deliver the key to an XWayland client, so settings shows the
+  registration status and the menu stays primary.
+- The tray needs a StatusNotifier host. Ubuntu GNOME ships the AppIndicator extension, plain
+  GNOME does not. Wisp checks the session bus at start and disables the tray if none exists.
+- Config lives in `~/.config/wisp/config.json`, the task cache in `signals.sqlite` next to it,
+  and secrets in `secrets/`, encrypted with the GNOME keyring through safeStorage.
+
+## How it behaves
+
+Every decision is a pure function in `src/main/brain/`, tested with time and randomness
+injected. `actor.ts` is a reducer over idle, walk, sit, sleep, alert, drag and celebrate.
+`movement.ts` eases to a constant walking speed, bounces on an edge with no neighbour and
+crosses to a touching display, mapping Y proportionally and landing on the new ground.
+`follow.ts` holds a three second hysteresis before the mascot walks toward the monitor where
+the pointer is. Sleep comes after five minutes without input, read from the session idle timer.
+
+Following has a known limit under XWayland. The X server only learns the pointer position
+while the pointer is over an X11 window, so Wisp treats an unchanged position as unknown and
+never chases a stale point. On a desktop with no other X11 apps it only sees the pointer over
+the mascot itself. The GNOME extension in Phase 8 is the real fix.
+
+## ClickUp
+
+Settings has a ClickUp section with a Connect button. Connecting opens the browser on
+ClickUp's OAuth page. Wisp listens on a loopback port for the redirect, exchanges the code
+with PKCE and stores the tokens encrypted. The client registers itself dynamically, so there
+is no app to create in ClickUp and no API key to paste. Only `read` is requested, though the
+server advertises `read write` and the SDK may ask for both. Nothing is ever written.
+
+Every few minutes Wisp asks for your tasks due between thirty days ago and two weeks ahead,
+including recently closed ones, so a task finished long after its due date still counts as a
+completion rather than one that quietly disappeared. It validates the answer with Zod and caches it in SQLite through the built in
+`node:sqlite`, so there is no native module to compile. Failures back off exponentially with
+jitter.
+
+The adapter discovers tool names at runtime by suffix rather than hardcoding them. The whole
+round trip is verified against a live workspace: dynamic client registration, the browser
+consent, the loopback redirect, the token exchange and a sync that came back with real tasks.
+
+## Calendar
+
+Wisp reads a published ICS link, so it works with Outlook, Google Calendar or anything else
+that publishes one. Publish the calendar in its web app, paste the link in settings, done.
+There is no app registration and no OAuth.
+
+Two things to know. The link is a capability: whoever holds it can read your calendar, so
+treat it like a password, and Wisp never writes it into a log or an error message. And a
+published link is served from a cache, so a meeting created minutes ago may take a while to
+appear. For silencing during a meeting booked days ago, that is fine. For a meeting somebody
+just created, it may not arrive in time.
+
+Recurring events are expanded locally from the RRULE, keeping the wall clock time rather than
+adding fixed milliseconds, which is what keeps a weekly meeting from drifting by an hour when
+the clocks change. Cancelled events are dropped and declined ones never interrupt.
+
+An earlier version read the calendar through Microsoft Graph. It worked on paper but needed an
+app registration in Entra ID, which is enough friction that it was never exercised against a
+real account. The ICS path replaced it.
+
+## Gruply Teams
+
+The third source is a company platform with a plain REST API and a bearer token, no OAuth and
+no MCP. It exists to test the abstraction with a number rather than a claim. Adding it cost an
+adapter directory, one connector file, and four registrations: the source union, the config
+shape, an export and the line that builds it. The hub did not change.
+
+The API has no global task endpoint and no current user endpoint, so the connector walks the
+active projects and filters by the email in settings. That is about twenty three requests per
+sync today. It is capped at forty projects with four requests in flight, and the per source
+backoff covers a rate limit.
+
+The API key belongs to a company, not to a person, so treat it as sensitive. Running from
+source it can come from `WISP_GRUPLY_TOKEN` in a local `.env`, which is gitignored, and a key
+pasted in settings goes to safeStorage and wins over the environment. The key is never written
+to a log or an error message, and a test checks that.
+
+`src/main/gruply/live.test.ts` runs against the real API only when a key and an email are in
+the environment, so the suite stays offline by default.
+
+## The panel
+
+A left click on the mascot that is not a drag opens a panel with what is due today: overdue
+items first, then by time. Each row offers Open, which sends you to the item in its own app,
+and Snooze, which quiets it for an hour. A row from a source that can write also offers Done,
+which asks for confirmation in the row itself before anything is sent. Writing to a work tool
+is expensive to get wrong, so there is no one click completion.
+
+Completing from the panel marks the item closed straight away, so the list updates without
+waiting for the next sync, and the mascot celebrates exactly as it would have if you had
+finished the task in the source app.
+
+Only ClickUp can be written to today. The calendar is read only by design, and the Gruply task
+update endpoint is documented but its body shape is not, so that connector reads only until it
+is confirmed.
+
+## Nudges
+
+`src/main/brain/nudge.ts` decides what deserves a bubble, from the cached signals, the history
+of what was already shown, the active silence windows and the budget.
+
+| Kind      | When                                             | Urgency | Repeats                                              |
+| --------- | ------------------------------------------------ | ------- | ---------------------------------------------------- |
+| due-now   | within the last minute of the due time           | urgent  | once                                                 |
+| due-soon  | inside the warning window, 30 minutes by default | normal  | once                                                 |
+| overdue   | past due by more than a minute                   | normal  | after 1 h, then 4 h, then daily, stops after 14 days |
+| due-today | later today, outside the warning window          | low     | once per day                                         |
+
+Silence is one abstraction, `SilenceWindow[]`, fed by several sources: quiet hours from
+settings, GNOME Do Not Disturb read from gsettings, a snooze from the menu, a fullscreen X11
+window in focus, and an accepted meeting. Quiet hours, fullscreen and meetings let an urgent
+nudge through, the other two do not.
+
+The budget is a hard ceiling, three per hour and twelve per day by default, urgent included.
+Excess is dropped rather than queued and comes back on the next decision if it still matters.
+
+## Mood
+
+<p align="center">
+  <img src="docs/images/moods.png" width="560" alt="The six moods, from dejected to elated">
+</p>
+
+Dejected, stressed, uneasy, calm, cheerful, elated. Events from the last eight hours score the
+ladder: a completed task counts up, one completed late counts a little, a task going overdue
+counts down, every interruption shown counts down a little, and each quiet hour counts up. The
+mood moves one step at a time, stays at least twenty minutes on a step, and climbs out of
+dejected on its own after two quiet hours.
+
+Mood shrinks the budget within the hard cap, never past it. Dejected drops to one interruption
+per hour, because sadness here is withdrawal rather than volume. It also changes how the
+mascot looks and moves through modifiers, not separate sheets: an expression layer over the
+eyes, animation speed, and how long it rests. The tray icon mirrors it and returns to neutral
+when you hide the mascot on purpose.
+
+## Celebration
+
+When a sync shows a task that was open and is now closed, Wisp aggregates completions for
+thirty seconds and celebrates once: a hop for one task, a dance for two or three, a trophy for
+four or more. Only your own tasks count, because that is all the adapter fetches.
+
+## Voice
+
+Off by default, in which case the bubble uses fixed lines. A provider can rewrite each line in
+the creature's words, with a two second timeout and the fixed line as fallback, so a slow or
+absent model never delays a bubble by more than that.
+
+| Provider                 | Notes                                                                                |
+| ------------------------ | ------------------------------------------------------------------------------------ |
+| Ollama on this machine   | Detected at `localhost:11434`, offered first when found. Nothing leaves the machine. |
+| OpenAI-compatible server | Any chat completions endpoint, NVIDIA included. Base URL, model, optional key.       |
+| Anthropic                | Official SDK, `claude-opus-5` at low effort by default.                              |
+
+Cloud providers receive task titles and the mood, and settings says so next to the option.
+Keys are stored with safeStorage, never in config.json.
+
+The voice sits behind one interface, `src/main/voice/index.ts`. With the provider off, the
+provider adapters and the Anthropic SDK are never loaded, and the bubble always shows the fixed
+line first, replacing it only if a model answers while the same bubble is still up. To remove the feature:
+delete `src/main/speech/` and `src/main/voice/model.ts`, return `silentVoice()` from
+`createVoice`, drop the Voice section from settings and `@anthropic-ai/sdk` from package.json.
+
+## Mascots
+
+Five to choose from in settings: the wisp, a coffee cup, a black cat, a ghost and a seedling
+in a pot. Switching one swaps the sprite sheet and the tray icon without a restart. The
+behaviour is identical, since a mascot is only artwork: the same poses, the same expression
+overlay and the same mood driven speed.
+
+Each one carries the mood in whatever part suits it. The wisp has its flame, the coffee cup
+its steam, the cat its tail and ears, the plant its leaves, and the ghost its hem.
+
+## Sprites
+
+`resources/sprites/<mascot>.png` and `<mascot>.json` follow the Aseprite JSON export, hash
+format, with tags named after the poses. The current files are generated by
+`scripts/make-placeholder-sprites.mjs`, one module per mascot under `scripts/lib/mascots/`. Export from Aseprite with the same tag names and drop
+the two files in, nothing else changes. Frames are 32 by 32 drawn at 3x on a canvas with
+`image-rendering: pixelated`.
+
+`meta.wisp.bob` is a small extension the real exporter does not produce: it says how far each
+frame moves the eyes, so the expression overlay lands on them. Leave it out and the offsets
+are zero.
 
 ## What the harness measures
 
-`npm run harness` runs the mascot for 10 minutes without interaction and writes to
-`harness-results/<timestamp>/`:
+`npm run harness` runs the mascot for ten minutes without interaction and writes to
+`harness-results/<timestamp>/`.
 
-- `ticks.csv`: every loop tick with the real interval and its deviation from the 33 ms
-  target. The summary reports p50, p95 and max of the deviation. This is the signal that the
-  compositor is stalling.
-- `processes.csv`: every 5 seconds, `app.getAppMetrics()` per Electron process: CPU percent
-  (of one core) and working set in KB. The first sample is discarded because it has no
-  previous reading to diff against.
-- `system.csv`: every 5 seconds, CPU of `gnome-shell` and `Xwayland` read from `/proc`.
-  These are whole-process numbers, not only our share, since the compositor also serves
-  every other window. Watch the difference between an idle desktop and a run.
-- `summary.txt` and `summary.json`: the numbers below.
+| File            | Contents                                                                        |
+| --------------- | ------------------------------------------------------------------------------- |
+| `ticks.csv`     | Every loop tick with the real interval and its deviation from the 33 ms target. |
+| `processes.csv` | Every 5 s, CPU and working set per Electron process from `app.getAppMetrics()`. |
+| `system.csv`    | Every 5 s, CPU of `gnome-shell` and `Xwayland` from `/proc`, whole process.     |
+| `summary.txt`   | p50, p95 and max of the loop deviation, mean and peak CPU, memory per process.  |
 
-At startup the harness logs `XDG_SESSION_TYPE`, the Electron version, the requested and the
-effective Ozone platform (verified by querying the window's XID with `xprop`), the display
-layout, whether `setShape` worked, and the cursor position with the display it is on.
+At startup it logs the session type, the Electron version, the requested and effective Ozone
+platform (verified by querying the window's XID with `xprop`), the display layout, whether
+`setShape` worked, and where the cursor is.
 
-Acceptance for Phase 0: walks end to end for 10 minutes below 3 percent CPU and can be
-dragged with the mouse.
-
-## Findings from the spike
-
-- `focusable: false` makes Chromium create an override-redirect X window. Mutter does not
-  manage it, so it stacks above every managed window, including the active one, and never
-  takes keyboard focus. `alwaysOnTop` and `isAlwaysOnTop()` are moot for it. This is the
-  behaviour we want.
-- `setShape` accepts a list of rectangles and does not throw. Corner cut of 8 pixels is
-  applied in `src/main/stage/window.ts`.
-- `screen.getCursorScreenPoint()` responds under XWayland. XWayland only learns the pointer
-  position while the pointer is over an X window, so over Wayland-native windows it reports
-  the last known position. Dragging is unaffected because the pointer is over the mascot.
-- Movement is a pure function in `src/main/brain/movement.ts`. Speed is constant per second
-  regardless of tick length. The mascot bounces at an edge with no neighbour and crosses to a
-  touching display, mapping Y proportionally when heights differ.
+Phase 0 acceptance was ten minutes below 3 percent CPU while walking, and being draggable. On
+this machine it measured 0.14 percent mean CPU and a p95 loop deviation of 0.31 ms. Run it
+again after changes that touch the loop.
 
 ## Tested environments
 
@@ -88,14 +282,36 @@ dragged with the mouse.
 ## Layout
 
 ```
-src/main/index.ts          entry, loop, harness wiring
-src/main/brain/movement.ts pure movement step, tested
-src/main/stage/window.ts   the only place that calls setBounds, setShape, setAlwaysOnTop
-src/main/harness/          environment report, metrics, CSV, system sampler
-src/preload/index.ts       exposes dragStart and dragEnd to the renderer
-src/renderer/              React 18, a purple square that reports pointer down and up
-src/shared/ipc.ts          channel names and payload types
+src/main/index.ts            entry, loop, IPC, harness wiring
+src/main/brain/              pure: movement, follow, actor, silence, nudges, mood, celebration
+src/main/stage/              the only place that calls setBounds, setShape, setAlwaysOnTop
+src/main/mcp/                MCP client host, OAuth PKCE loopback provider, encrypted secrets
+src/main/connectors/         the Connector interface, the three connectors, the hub
+src/main/ics/                ICS fetch, parser, recurrence expansion and mapping
+src/main/gruply/             Gruply Teams client and task adapter
+src/main/signals/            SQLite cache with diff, scheduler with backoff, ClickUp adapter
+src/main/speech/             prompt, sanitizer, provider adapters, Ollama detection
+src/main/voice/              the interface the app sees, and its lazy implementation
+src/main/harness/            environment report, metrics, CSV, system sampler
+src/renderer/                React: mascot canvas, bubble, day panel, settings
+src/shared/                  poses, config shape, IPC channels, i18n
+resources/                   sprite sheet, Aseprite metadata, tray icons
+scripts/                     placeholder sprite generator, README image generator
 ```
+
+## Roadmap
+
+| Phase | What                                                                       | State |
+| ----- | -------------------------------------------------------------------------- | ----- |
+| 0     | Spike: prove the window mechanics and measure the cost                     | Done  |
+| 1     | Life: the creature walks, sleeps, follows, and can be dismissed            | Done  |
+| 2     | Signal: the first real data, ClickUp tasks over MCP                        | Done  |
+| 3     | Judgement: rules, silence windows, a budget                                | Done  |
+| 4     | Soul: mood, celebration, an optional voice                                 | Done  |
+| 5     | Proof: a second connector, the calendar, to test the abstraction           | Done  |
+| 6     | Action: click the mascot and act on the day                                | Done  |
+| 7     | Showcase: package, document, publish                                       | Next  |
+| 8     | If it is worth it: a native GNOME extension instead of the XWayland window | Maybe |
 
 ## License
 

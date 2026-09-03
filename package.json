@@ -10,16 +10,20 @@
     "build": "electron-vite build",
     "start": "electron-vite preview -- --ozone-platform=x11 --no-sandbox",
     "harness": "electron-vite build && WISP_HARNESS_MINUTES=10 electron . --ozone-platform=x11 --no-sandbox",
-    "harness:short": "electron-vite build && WISP_HARNESS_MINUTES=1 WISP_DRAG_SELFTEST=1 electron . --ozone-platform=x11 --no-sandbox",
+    "harness:short": "electron-vite build && WISP_HARNESS_MINUTES=1 WISP_SELFTEST=1 electron . --ozone-platform=x11 --no-sandbox",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "sprites": "node scripts/make-placeholder-sprites.mjs && node scripts/make-docs-images.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.123.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -10,14 +10,14 @@ body,
 }
 
 .mascot {
+  display: block;
   width: 96px;
   height: 96px;
-  background: #7c3aed;
-  border-radius: 8px;
+  image-rendering: pixelated;
   cursor: grab;
+  touch-action: none;
 }
 
 .mascot.dragging {
-  background: #6d28d9;
   cursor: grabbing;
 }

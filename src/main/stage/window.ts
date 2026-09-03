@@ -34,6 +34,7 @@ export function createStage(x: number, y: number): Stage {
       sandbox: true,
     },
   });
+  win.setMenu(null);
 
   win.setAlwaysOnTop(true);
 
