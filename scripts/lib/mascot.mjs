@@ -6,15 +6,18 @@
 /** @type {readonly Expression[]} */
 export const EXPRESSIONS = ['bright', 'plain', 'low'];
 
-/** @type {{ name: string; frames: number; duration: number }[]} */
+// The pose order and the default hold for one of its frames. How many frames a pose spends is
+// the mascot's own business: its frame table is what the sheet reads, and a frame that wants a
+// different hold says so with `durationMs`.
+/** @type {{ name: string; duration: number }[]} */
 export const POSES = [
-  { name: 'idle', frames: 2, duration: 500 },
-  { name: 'walk', frames: 4, duration: 140 },
-  { name: 'sit', frames: 2, duration: 600 },
-  { name: 'sleep', frames: 2, duration: 900 },
-  { name: 'alert', frames: 2, duration: 120 },
-  { name: 'drag', frames: 2, duration: 300 },
-  { name: 'celebrate', frames: 3, duration: 160 },
+  { name: 'idle', duration: 500 },
+  { name: 'walk', duration: 140 },
+  { name: 'sit', duration: 600 },
+  { name: 'sleep', duration: 900 },
+  { name: 'alert', duration: 120 },
+  { name: 'drag', duration: 300 },
+  { name: 'celebrate', duration: 160 },
 ];
 
 /** @type {{ mood: string; expression: Expression; brightness: number; saturation: number }[]} */
@@ -34,6 +37,8 @@ export const MOODS = [
  * @typedef {object} FrameSpec
  * @property {number} [bobX]
  * @property {number} [bobY]
+ * @property {number} [durationMs] how long this frame is held, when the pose default is wrong for
+ *   it. A pose that spends many frames on one gesture usually holds each of them for less.
  */
 
 /**

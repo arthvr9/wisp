@@ -197,7 +197,31 @@ function framesOf(mascot) {
   return out;
 }
 
+/**
+ * Where each pose starts in a sheet. Frame indices used to be written out by hand here, which
+ * only held while every pose had the frame count it started with; a mascot that spends eight
+ * frames on its idle moves every index after it.
+ * @param {string} mascot
+ * @returns {Record<string, number>}
+ */
+function tagStarts(mascot) {
+  const text = readFileSync(join(root, 'resources', 'sprites', `${mascot}.json`), 'utf8');
+  /** @type {unknown} */
+  const parsed = JSON.parse(text);
+  const meta = /** @type {{ meta?: { frameTags?: unknown } }} */ (parsed).meta;
+  const tags = meta?.frameTags;
+  if (!Array.isArray(tags)) throw new Error(`No frame tags: ${mascot}`);
+  /** @type {Record<string, number>} */
+  const out = {};
+  for (const raw of /** @type {unknown[]} */ (tags)) {
+    const tag = /** @type {{ name?: unknown; from?: unknown }} */ (raw);
+    if (typeof tag.name === 'string' && typeof tag.from === 'number') out[tag.name] = tag.from;
+  }
+  return out;
+}
+
 const wispFrames = framesOf('wisp');
+const wispStarts = tagStarts('wisp');
 
 /** @param {number} index */
 const cell = (index) => {
@@ -213,8 +237,13 @@ const portrait = blank(FRAME * 5, FRAME * 5);
 blit(portrait, sheet, 0, 0, 5, cell(0));
 writeFileSync(join(outDir, 'wisp.png'), encodePng(portrait));
 
-// One frame per pose, in the order the state machine usually walks through them.
-const showcase = [0, 2, 6, 8, 10, 12, 15];
+// One frame per pose, in the order the state machine usually walks through them. The second
+// frame of each pose, since a pose's first frame is often its rest and the second is where it
+// has moved; celebrate shows its third, which is the top of the hop.
+const showcase = ['idle', 'walk', 'sit', 'sleep', 'alert', 'drag'].map(
+  (pose) => (wispStarts[pose] ?? 0) + 1,
+);
+showcase.push((wispStarts.celebrate ?? 0) + 2);
 const gap = 10;
 const scale = 3;
 const strip = blank(showcase.length * (FRAME * scale + gap) - gap, FRAME * scale);
