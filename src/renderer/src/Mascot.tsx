@@ -1,14 +1,53 @@
 import { useEffect, useRef, useState } from 'react';
 import type { MouseEvent, PointerEvent } from 'react';
 
-import sheetJson from '../../../resources/sprites/wisp.json';
-import sheetUrl from '../../../resources/sprites/wisp.png';
 import type { PoseUpdate } from '../../shared/actor';
+import { defaultConfig } from '../../shared/config';
+import { isMascot } from '../../shared/mascots';
+import type { MascotName } from '../../shared/mascots';
 import { frameAt, parseSheet } from './sprites';
-import type { Frame } from './sprites';
+import type { AsepriteJson, Frame, Sheet } from './sprites';
 
 const SIZE = 96;
-const sheet = parseSheet(sheetJson);
+
+// Vite resolves this glob at build time, so every mascot's sheet ships in the bundle and
+// switching mascots at runtime never needs a network request or a dynamic import.
+const sheetUrls = import.meta.glob<string>('../../../resources/sprites/*.png', {
+  eager: true,
+  import: 'default',
+});
+const sheetJsons = import.meta.glob<AsepriteJson>('../../../resources/sprites/*.json', {
+  eager: true,
+  import: 'default',
+});
+
+interface MascotSheet {
+  url: string;
+  sheet: Sheet;
+}
+
+function mascotNameFromPath(path: string): string {
+  return (path.split('/').pop() ?? '').replace(/\.\w+$/, '');
+}
+
+const SHEETS: Partial<Record<MascotName, MascotSheet>> = {};
+for (const [path, url] of Object.entries(sheetUrls)) {
+  const name = mascotNameFromPath(path);
+  if (!isMascot(name)) continue;
+  const json = sheetJsons[path.replace(/\.png$/, '.json')];
+  if (!json) continue;
+  try {
+    SHEETS[name] = { url, sheet: parseSheet(json) };
+  } catch (err) {
+    console.error(`Sprite sheet for "${name}" is invalid.`, err);
+  }
+}
+
+// Falls back to wisp so a mascot whose art has not shipped yet still shows something rather
+// than a blank window.
+function sheetFor(mascot: MascotName): MascotSheet | undefined {
+  return SHEETS[mascot] ?? SHEETS.wisp;
+}
 
 // A left click that neither moved far nor took long opens the panel instead of being read as
 // the start of a drag.
@@ -70,14 +109,26 @@ export function Mascot() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const downRef = useRef<PointerDown | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [mascot, setMascot] = useState<MascotName>(defaultConfig.mascot);
+
+  useEffect(() => {
+    void window.wisp.getConfig().then((config) => {
+      setMascot(config.mascot);
+    });
+    return window.wisp.onConfigChanged((config) => {
+      setMascot(config.mascot);
+    });
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx) return;
+    const entry = sheetFor(mascot);
+    if (!canvas || !ctx || !entry) return;
+    const { url, sheet } = entry;
 
     const image = new Image();
-    image.src = sheetUrl;
+    image.src = url;
 
     let current: PoseUpdate = {
       pose: 'idle',
@@ -145,7 +196,7 @@ export function Mascot() {
       document.removeEventListener('visibilitychange', onVisibility);
       image.removeEventListener('load', schedule);
     };
-  }, []);
+  }, [mascot]);
 
   function onPointerDown(e: PointerEvent<HTMLCanvasElement>) {
     if (e.button !== 0) return;

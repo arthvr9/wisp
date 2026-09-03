@@ -1,15 +1,38 @@
 import { useEffect, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
 
-import iconUrl from '../../../resources/icons/wisp-256.png';
 import type { Config } from '../../shared/config';
 import { translator } from '../../shared/i18n';
 import type { Translate } from '../../shared/i18n';
 import type { MessageKey } from '../../shared/i18n/en';
 import type { EnvironmentInfo } from '../../shared/ipc';
+import { MASCOTS, isMascot } from '../../shared/mascots';
+import type { MascotName } from '../../shared/mascots';
 import type { Mood } from '../../shared/mood';
 import type { SignalSource, SignalsStatus } from '../../shared/signals';
 import type { SpeechConfig, SpeechProviderKind, SpeechStatus } from '../../shared/speech';
+
+// Vite resolves this glob at build time, so every mascot's icon ships in the bundle.
+const iconUrls = import.meta.glob<string>('../../../resources/icons/*/icon-256.png', {
+  eager: true,
+  import: 'default',
+});
+
+function mascotFromIconPath(path: string): string {
+  const parts = path.split('/');
+  return parts[parts.length - 2] ?? '';
+}
+
+const MASCOT_ICONS: Partial<Record<MascotName, string>> = {};
+for (const [path, url] of Object.entries(iconUrls)) {
+  const name = mascotFromIconPath(path);
+  if (isMascot(name)) MASCOT_ICONS[name] = url;
+}
+
+// Falls back to wisp so a mascot whose art has not shipped yet still shows an icon.
+function mascotIconUrl(name: MascotName): string | undefined {
+  return MASCOT_ICONS[name] ?? MASCOT_ICONS.wisp;
+}
 
 const SAVED_VISIBLE_MS = 1500;
 const NAME_MAX = 24;
@@ -244,8 +267,7 @@ export function SettingsPage() {
   const [speech, setSpeech] = useState<SpeechStatus | null>(null);
   const [mood, setMood] = useState<Mood | null>(null);
   const [busy, setBusy] = useState(false);
-  const [clientIdDraft, setClientIdDraft] = useState<string | null>(null);
-  const [tenantDraft, setTenantDraft] = useState<string | null>(null);
+  const [calendarUrlDraft, setCalendarUrlDraft] = useState<string | null>(null);
   const [gruplyEmailDraft, setGruplyEmailDraft] = useState<string | null>(null);
   const [gruplyKeyDraft, setGruplyKeyDraft] = useState('');
   const [secrets, setSecrets] = useState<Record<string, boolean>>({});
@@ -409,7 +431,7 @@ export function SettingsPage() {
   return (
     <div className="page">
       <header className="header">
-        <img className="icon" src={iconUrl} alt="" width={24} height={24} />
+        <img className="icon" src={mascotIconUrl(config.mascot)} alt="" width={24} height={24} />
         <h1>{t('settings.title')}</h1>
         {mood && <span className="mood">{t('settings.mood', { mood: t(`mood.${mood}`) })}</span>}
       </header>
@@ -431,6 +453,27 @@ export function SettingsPage() {
             autoComplete="off"
           />
           <p className="hint">{t('settings.name.hint')}</p>
+        </section>
+
+        <section className="field">
+          <span className="label">{t('settings.mascot')}</span>
+          <div className="mascotRow" role="group" aria-label={t('settings.mascot')}>
+            {MASCOTS.map((name) => (
+              <button
+                key={name}
+                type="button"
+                className={name === config.mascot ? 'mascotOption selected' : 'mascotOption'}
+                aria-pressed={name === config.mascot}
+                onClick={() => {
+                  save({ mascot: name });
+                }}
+              >
+                <img src={mascotIconUrl(name)} alt="" width={32} height={32} />
+                <span>{t(`mascot.${name}`)}</span>
+              </button>
+            ))}
+          </div>
+          <p className="hint">{t('settings.mascot.hint')}</p>
         </section>
 
         <section className="field">
@@ -517,87 +560,68 @@ export function SettingsPage() {
         />
 
         <section className="field">
-          <span className="label">{t('settings.outlook')}</span>
-          <p className="hint">{t('settings.outlook.hint')}</p>
+          <span className="label">{t('settings.calendar')}</span>
+          <p className="hint">{t('settings.calendar.hint')}</p>
           {signals && (
-            <p className={signals.connectors.outlook.state === 'error' ? 'hint notice' : 'hint'}>
-              {statusLine(signals, 'outlook', 'settings.outlook.connected')}
+            <p className={signals.connectors.calendar.state === 'error' ? 'hint notice' : 'hint'}>
+              {statusLine(signals, 'calendar', 'settings.calendar.connected')}
             </p>
           )}
-          <label className="inline" htmlFor="outlookClientId">
-            {t('settings.outlook.clientId')}
+          <label className="inline" htmlFor="calendarUrl">
+            {t('settings.calendar.url')}
           </label>
           <input
-            id="outlookClientId"
+            id="calendarUrl"
             type="text"
-            value={clientIdDraft ?? config.outlook.clientId}
+            value={calendarUrlDraft ?? config.calendar.icsUrl}
             spellCheck={false}
             autoComplete="off"
             onChange={(e) => {
-              setClientIdDraft(e.target.value);
+              setCalendarUrlDraft(e.target.value);
             }}
             onBlur={() => {
-              if (clientIdDraft !== null) {
-                save({ outlook: { ...config.outlook, clientId: clientIdDraft.trim() } });
-                setClientIdDraft(null);
+              if (calendarUrlDraft !== null) {
+                save({ calendar: { ...config.calendar, icsUrl: calendarUrlDraft.trim() } });
+                setCalendarUrlDraft(null);
               }
             }}
           />
-          <p className="hint">{t('settings.outlook.clientId.hint')}</p>
-          <label className="inline" htmlFor="outlookTenant">
-            {t('settings.outlook.tenant')}
-          </label>
-          <input
-            id="outlookTenant"
-            type="text"
-            value={tenantDraft ?? config.outlook.tenant}
-            spellCheck={false}
-            autoComplete="off"
-            onChange={(e) => {
-              setTenantDraft(e.target.value);
-            }}
-            onBlur={() => {
-              if (tenantDraft !== null) {
-                const tenant = tenantDraft.trim();
-                save({
-                  outlook: { ...config.outlook, tenant: tenant.length > 0 ? tenant : 'common' },
-                });
-                setTenantDraft(null);
-              }
-            }}
-          />
-          <p className="hint">{t('settings.outlook.tenant.hint')}</p>
-          {config.outlook.clientId.length === 0 && (
-            <p className="hint notice">{t('settings.outlook.needsClientId')}</p>
+          <p className="hint">{t('settings.calendar.url.hint')}</p>
+          <p className="hint notice">{t('settings.calendar.url.secret')}</p>
+          <p className="hint">{t('settings.calendar.url.cache')}</p>
+          {config.calendar.icsUrl.length === 0 && (
+            <p className="hint notice">{t('settings.calendar.needsUrl')}</p>
           )}
-          {actions('outlook', config.outlook.clientId.length > 0)}
+          {actions('calendar', config.calendar.icsUrl.length > 0)}
           <label className="inline" htmlFor="meetingWarn">
-            {t('settings.outlook.warn')}
+            {t('settings.calendar.warn')}
           </label>
           <input
             id="meetingWarn"
             type="number"
             min={0}
             max={120}
-            value={config.outlook.warnMinutes}
+            value={config.calendar.warnMinutes}
             onChange={(e) => {
               const n = Number(e.target.value);
               if (Number.isFinite(n) && n >= 0 && n <= 120) {
-                save({ outlook: { ...config.outlook, warnMinutes: n } });
+                save({ calendar: { ...config.calendar, warnMinutes: n } });
               }
             }}
           />
           <label className="check">
             <input
               type="checkbox"
-              checked={config.outlook.silenceDuringMeetings}
+              checked={config.calendar.silenceDuringMeetings}
               onChange={(e) => {
-                save({ outlook: { ...config.outlook, silenceDuringMeetings: e.target.checked } });
+                save({
+                  calendar: { ...config.calendar, silenceDuringMeetings: e.target.checked },
+                });
               }}
             />
-            <span>{t('settings.outlook.silence')}</span>
+            <span>{t('settings.calendar.silence')}</span>
           </label>
-          <p className="hint">{t('settings.outlook.silence.hint')}</p>
+          <p className="hint">{t('settings.calendar.silence.hint')}</p>
         </section>
 
         <section className="field">

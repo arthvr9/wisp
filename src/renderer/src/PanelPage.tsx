@@ -9,7 +9,7 @@ import { formatTimeLeft } from './panel-format';
 
 const SOURCE_KEY: Record<SignalSource, MessageKey> = {
   clickup: 'panel.source.clickup',
-  outlook: 'panel.source.outlook',
+  calendar: 'panel.source.calendar',
   gruply: 'panel.source.gruply',
 };
 

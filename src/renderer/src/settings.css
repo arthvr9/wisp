@@ -392,3 +392,37 @@ input[type='time']:disabled {
 .keyRow button {
   flex: none;
 }
+
+.mascotRow {
+  display: flex;
+  gap: 8px;
+}
+
+.mascotOption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  padding: 8px 4px;
+}
+
+.mascotOption img {
+  width: 32px;
+  height: 32px;
+  image-rendering: pixelated;
+}
+
+.mascotOption span {
+  font-size: 11px;
+}
+
+.mascotOption.selected {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.mascotOption:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

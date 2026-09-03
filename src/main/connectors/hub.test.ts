@@ -131,7 +131,7 @@ describe('ConnectorHub', () => {
   it('throws when completing a signal whose source cannot write', async () => {
     const now = Date.now();
     const meeting = meetingSig('a', now + 60 * 60_000);
-    const outlook = fakeConnector('outlook', { fetch: () => Promise.resolve([meeting]) });
+    const outlook = fakeConnector('calendar', { fetch: () => Promise.resolve([meeting]) });
     hub = makeHub([outlook]);
     hub.start();
     await hub.syncNow();

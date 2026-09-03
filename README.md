@@ -105,25 +105,25 @@ The adapter discovers tool names at runtime by suffix rather than hardcoding the
 round trip is verified against a live workspace: dynamic client registration, the browser
 consent, the loopback redirect, the token exchange and a sync that came back with real tasks.
 
-## Outlook calendar
+## Calendar
 
-The second connector reads your calendar straight from Microsoft Graph, with no MCP in
-between. That was a deliberate choice: it makes the connector abstraction carry its weight,
-since the two sources share nothing but the `Connector` interface and the signal shape.
+Wisp reads a published ICS link, so it works with Outlook, Google Calendar or anything else
+that publishes one. Publish the calendar in its web app, paste the link in settings, done.
+There is no app registration and no OAuth.
 
-It needs an application (client) ID from an app registration in Entra ID, registered as a
-public client with the redirect URI `http://localhost`. Paste it in settings and press
-Connect. Wisp asks for `Calendars.Read offline_access`, stores the tokens the same way as
-ClickUp, and never writes.
+Two things to know. The link is a capability: whoever holds it can read your calendar, so
+treat it like a password, and Wisp never writes it into a log or an error message. And a
+published link is served from a cache, so a meeting created minutes ago may take a while to
+appear. For silencing during a meeting booked days ago, that is fine. For a meeting somebody
+just created, it may not arrive in time.
 
-Meetings come from `calendarView` rather than the events list, because the server expands a
-recurring series into real instances. That is what keeps a weekly meeting correct across a
-daylight saving change instead of drifting by an hour. Cancelled events are dropped, and
-declined ones are kept but never interrupt.
+Recurring events are expanded locally from the RRULE, keeping the wall clock time rather than
+adding fixed milliseconds, which is what keeps a weekly meeting from drifting by an hour when
+the clocks change. Cancelled events are dropped and declined ones never interrupt.
 
-Two things follow from a meeting. A warning a few minutes before it starts, and silence while
-it runs: an accepted, busy, not all day meeting becomes a `SilenceWindow` from a minute before
-the start to the end. Urgent still passes, so a task due right now reaches you anyway.
+An earlier version read the calendar through Microsoft Graph. It worked on paper but needed an
+app registration in Entra ID, which is enough friction that it was never exercised against a
+real account. The ICS path replaced it.
 
 ## Gruply Teams
 
@@ -273,7 +273,7 @@ src/main/brain/              pure: movement, follow, actor, silence, nudges, moo
 src/main/stage/              the only place that calls setBounds, setShape, setAlwaysOnTop
 src/main/mcp/                MCP client host, OAuth PKCE loopback provider, encrypted secrets
 src/main/connectors/         the Connector interface, the ClickUp and Outlook connectors, the hub
-src/main/graph/              Microsoft Graph auth, client and calendar adapter
+src/main/ics/                ICS fetch, parser, recurrence expansion and mapping
 src/main/gruply/             Gruply Teams client and task adapter
 src/main/signals/            SQLite cache with diff, scheduler with backoff, ClickUp adapter
 src/main/speech/             prompt, sanitizer, provider adapters, Ollama detection

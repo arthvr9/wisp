@@ -92,10 +92,11 @@ transparent, non-focusable X11 window (through XWayland) that moves itself with 
 - A connector is one file implementing `Connector` from `src/main/connectors/types.ts`, plus
   one config entry and one settings section. The hub knows no source by name. If a third
   connector needs anything else, the abstraction is wrong and the hub is what changes.
-- The Outlook connector talks to Microsoft Graph directly, not through MCP. That is the point:
-  two sources with nothing in common but the interface.
-- Calendar reads use `calendarView`, never the events list, so recurring series come back as
-  expanded instances and survive a daylight saving change.
+- The three connectors have nothing in common but the interface: an MCP server with OAuth, a
+  REST API with a bearer token, and a plain file over HTTP. That is the point.
+- Calendar reads come from a published ICS link. Recurrence is expanded locally on wall clock
+  components, never by adding fixed milliseconds, so a series survives a clock change.
+- The ICS URL is a capability. It never appears in a log, an error message or an IPC payload.
 - A meeting produces at most two things: a nudge before it starts and a `SilenceWindow` while
   it runs. Anything else about meetings belongs in the brain, not in the connector.
 

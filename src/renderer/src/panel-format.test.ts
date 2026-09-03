@@ -33,8 +33,8 @@ function taskItem(dueAt: number, nowMs: number): DayItem {
 
 function meetingSignal(dueAt: number, endsAt: number, allDay = false): Signal {
   return {
-    id: 'outlook:a',
-    source: 'outlook',
+    id: 'calendar:a',
+    source: 'calendar',
     kind: 'meeting',
     title: 'Team sync',
     dueAt,

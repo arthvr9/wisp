@@ -4,6 +4,7 @@ import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
+import type { MascotName } from '../shared/mascots';
 import type { Mood } from '../shared/mood';
 
 // GNOME has no tray of its own. The AppIndicator extension provides one through the
@@ -19,18 +20,20 @@ export function detectTray(): Promise<boolean> {
 export interface TrayHandle {
   update(tooltip: string, items: MenuItemConstructorOptions[]): void;
   setMood(mood: Mood | 'neutral'): void;
+  setMascot(name: MascotName): void;
   destroy(): void;
 }
 
-function iconFor(appPath: string, mood: Mood | 'neutral'): string {
-  const dir = join(appPath, 'resources', 'icons');
+function iconFor(appPath: string, mascot: MascotName, mood: Mood | 'neutral'): string {
+  const dir = join(appPath, 'resources', 'icons', mascot);
   const specific = join(dir, `tray-${mood}.png`);
   return mood !== 'neutral' && existsSync(specific) ? specific : join(dir, 'tray.png');
 }
 
 export function createTray(appPath: string): TrayHandle {
-  const tray = new Tray(nativeImage.createFromPath(iconFor(appPath, 'neutral')));
+  let mascot: MascotName = 'wisp';
   let current: Mood | 'neutral' = 'neutral';
+  const tray = new Tray(nativeImage.createFromPath(iconFor(appPath, mascot, current)));
   return {
     update(tooltip, items) {
       tray.setToolTip(tooltip);
@@ -39,7 +42,12 @@ export function createTray(appPath: string): TrayHandle {
     setMood(mood) {
       if (mood === current) return;
       current = mood;
-      tray.setImage(nativeImage.createFromPath(iconFor(appPath, mood)));
+      tray.setImage(nativeImage.createFromPath(iconFor(appPath, mascot, mood)));
+    },
+    setMascot(name) {
+      if (name === mascot) return;
+      mascot = name;
+      tray.setImage(nativeImage.createFromPath(iconFor(appPath, mascot, current)));
     },
     destroy() {
       tray.destroy();

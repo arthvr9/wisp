@@ -14,6 +14,13 @@ export const en = {
   'settings.name.hint': 'How {name} is called in its own lines.',
   'settings.language': 'Language',
   'settings.language.en': 'English',
+  'settings.mascot': 'Mascot',
+  'settings.mascot.hint': 'Changes the character and its tray icon. Behaviour stays the same.',
+  'mascot.wisp': 'Wisp',
+  'mascot.coffee': 'Coffee',
+  'mascot.cat': 'Cat',
+  'mascot.ghost': 'Ghost',
+  'mascot.plant': 'Plant',
   'settings.autostart': 'Start with the session',
   'settings.autostart.hint': 'Writes a .desktop file to {path}.',
   'settings.followCursor': 'Follow the cursor between monitors',
@@ -52,6 +59,21 @@ export const en = {
   'settings.outlook.silence.hint': 'A task due right now still gets through.',
   'settings.outlook.needsClientId': 'Enter a client ID before connecting.',
   'settings.outlook.connected': 'Connected. {count} meetings ahead.',
+  'settings.calendar': 'Calendar',
+  'settings.calendar.hint':
+    'Reads a published calendar link, so meetings can quiet {name} down and warn you before they start. Nothing is written.',
+  'settings.calendar.url': 'Calendar URL',
+  'settings.calendar.url.hint':
+    'Publish the calendar in Outlook Web or Google Calendar, then paste the link it gives you.',
+  'settings.calendar.url.secret':
+    'Anyone holding this link can read the calendar. Treat it as a secret.',
+  'settings.calendar.url.cache':
+    'A published link is served from a cache, so a meeting created minutes ago may not appear at once.',
+  'settings.calendar.needsUrl': 'Enter a calendar URL before connecting.',
+  'settings.calendar.warn': 'Minutes of warning before a meeting',
+  'settings.calendar.silence': 'Stay quiet during an accepted meeting',
+  'settings.calendar.silence.hint': 'A task due right now still gets through.',
+  'settings.calendar.connected': 'Connected. {count} meetings ahead.',
   'settings.gruply': 'Gruply Teams',
   'settings.gruply.hint':
     'Reads the tasks assigned to you across the active projects. Read only, nothing is written.',
@@ -139,6 +161,7 @@ export const en = {
   'panel.snoozed': 'Snoozed until {time}',
   'panel.source.clickup': 'ClickUp',
   'panel.source.outlook': 'Outlook',
+  'panel.source.calendar': 'Calendar',
   'panel.source.gruply': 'Gruply',
   'panel.time.inMinutes': 'in {minutes} min',
   'panel.time.now': 'now',
